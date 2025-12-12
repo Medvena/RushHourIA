@@ -1,245 +1,393 @@
-'''
-Name: Rahmanta Satriana
-UCID: 30044533
-Date: 26/11/2017
-
-Assessment 4: GUI Rush Hour Game
-
-Resources Used:
-https://stackoverflow.com/questions/41639671/pop-up-message-box-in-pygame
-https://www.pygame.org/docs/
-'''
-
-
-#imports libraries
 import pygame
 import sys
 import math
-from tkinter import *
-from tkinter import messagebox
+import copy
+from typing import List, Tuple, Dict, Optional
+from tkinter import messagebox, Tk  # Utilisé pour les pop-ups seulement
 
-Tk().wm_withdraw() #to hide the main Tkinter window
+# --- Définitions du Noyau Logique (Copie/Colle du code précédent) ---
+
+GRID_SIZE = 6
+EXIT_ROW = 2
+EXIT_COL = 5
+PER_SQ = 80  # Taille d'une case en pixels (80x80)
 
 
+class Vehicle:
+    """Représentation logique du véhicule."""
 
-class Rectangle: #rectangle class
-
-    def __init__(self, orientation, size, row, column):
-        perSq = 80 #one square is 80x80
-        self.startX = column * perSq #starting x-coordinate
-        self.startY = row * perSq #starting y-coordinate
+    def __init__(self, id: str, orientation: str, size: int, row: int, col: int):
+        self.id = id
         self.orientation = orientation
         self.size = size
-        
-        if self.orientation == "h": #for horizontal cars
-            length = perSq * size
-            self.extendX = length #How much the x-coordinate extends by
-            self.extendY = perSq #How much the y-coordinate extends by
-            self.colour = (0, 255, 0)
-            self.startLimitX = 0 #Starting x coordinate of where the car can be positioned
-            self.startLimitY = self.startY #Starting y coordinate of where the car can be positioned
-            self.endLimitX = 480 - length + 80 #Ending x coordinate of where the car can be positioned
-            self.endLimitY = self.startY + self.extendY #Ending x coordinate of where the car can be positioned
-            
-        else: #same as above, but for vertical, so swap x and y
-            length = perSq * size
-            self.extendX = perSq
-            self.extendY = length
-            self.colour = (0, 0, 255)
-            self.startLimitX = self.startX
-            self.startLimitY = 0
-            self.endLimitX = self.startX + self.extendX
-            self.endLimitY = 480 - length + 80
+        self.row = row  # Ligne de la tête (coordonnée GRILLE)
+        self.col = col  # Colonne de la tête (coordonnée GRILLE)
 
-        if row == 2 and column == 0: #if it is the first car (car needed to get across)
-            self.colour = (204, 0, 0) #make it its own different colour to differentiate
+    def __repr__(self):
+        return f"V({self.id}, {self.orientation}, L{self.row}C{self.col})"
 
-        self.currentX = self.startX + 0 #current x-coordinate of car
-        self.currentY = self.startY + 0 #current y-coordinate of car
+    def __eq__(self, other):
+        if not isinstance(other, Vehicle): return NotImplemented
+        return (self.id == other.id and self.orientation == other.orientation and
+                self.size == other.size and self.row == other.row and self.col == other.col)
 
-        self.rectDrag = False #boolean if the car is currently being dragged or not
-        self.rect = pygame.Rect(self.startX, self.startY, self.extendX, self.extendY) #make rectangle object
+    def __hash__(self):
+        return hash((self.id, self.orientation, self.size, self.row, self.col))
 
 
-class game: #main class
+class BoardState:
+    """Représente l'état complet du plateau logique."""
 
-    def __init__(self):
+    def __init__(self, vehicles: List[Vehicle]):
+        self.vehicles: Dict[str, Vehicle] = {v.id: v for v in vehicles}
+        self.grid = self._update_grid_matrix()
 
-        self.loadGame()
-        self.makeRectangles()
+    # Méthodes _update_grid_matrix, __repr__, __eq__, __hash__ restent les mêmes
+    # ... (les méthodes du code précédent sont ici)
+
+    def _update_grid_matrix(self) -> List[List[Optional[str]]]:
+        grid = [[None] * GRID_SIZE for _ in range(GRID_SIZE)]
+        for vehicle in self.vehicles.values():
+            if vehicle.orientation == 'h':
+                for i in range(vehicle.size):
+                    if 0 <= vehicle.col + i < GRID_SIZE and 0 <= vehicle.row < GRID_SIZE:
+                        grid[vehicle.row][vehicle.col + i] = vehicle.id
+            else:  # orientation == 'v'
+                for i in range(vehicle.size):
+                    if 0 <= vehicle.row + i < GRID_SIZE and 0 <= vehicle.col < GRID_SIZE:
+                        grid[vehicle.row + i][vehicle.col] = vehicle.id
+        return grid
+
+    def is_solved(self) -> bool:
+        red_car = self.vehicles.get('X')
+        if red_car is None: return False
+        return red_car.row == EXIT_ROW and (red_car.col + red_car.size) == (EXIT_COL + 1)
+
+    # Note: Pour le jeu jouable, on simplifie 'apply_move' pour éviter de générer un nouvel état
+    # complet, mais on garde la vérification de la validité.
+
+    def is_move_valid(self, v_id: str, delta: int) -> bool:
+        """Vérifie si le véhicule peut se déplacer de 'delta' cases."""
+        vehicle = self.vehicles.get(v_id)
+        if not vehicle: return False
+
+        temp_row, temp_col = vehicle.row, vehicle.col
+
+        # Le déplacement doit être d'une case au minimum
+        step = int(math.copysign(1, delta))
+
+        for _ in range(abs(delta)):
+            # On vérifie la case cible après un déplacement de 1
+            if vehicle.orientation == 'h':
+                # Si delta est positif, on regarde la case la plus à droite
+                if step > 0:
+                    temp_col += 1
+                    target_col = temp_col + vehicle.size - 1
+                    target_row = temp_row
+                # Si delta est négatif, on regarde la case la plus à gauche
+                else:
+                    target_col = temp_col - 1
+                    target_row = temp_row
+                    temp_col -= 1
+
+            else:  # orientation == 'v'
+                # Si delta est positif, on regarde la case la plus en bas
+                if step > 0:
+                    temp_row += 1
+                    target_row = temp_row + vehicle.size - 1
+                    target_col = temp_col
+                # Si delta est négatif, on regarde la case la plus en haut
+                else:
+                    target_row = temp_row - 1
+                    target_col = temp_col
+                    temp_row -= 1
+
+            # 1. Vérification des limites du plateau
+            if not (0 <= target_row < GRID_SIZE and 0 <= target_col < GRID_SIZE):
+                return False
+
+            # 2. Vérification de la collision (la case doit être vide)
+            # Exception pour la voiture rouge à la sortie (ligne 2, colonne 5)
+            is_exit_slot = (target_row == EXIT_ROW and target_col == EXIT_COL)
+
+            if self.grid[target_row][target_col] is not None:
+                # Si c'est la voiture rouge qui bloque la sortie, c'est OK
+                if is_exit_slot and v_id == 'X':
+                    pass
+                # Sinon, si la case n'est pas vide (et pas la sortie pour la rouge), c'est bloqué
+                elif self.grid[target_row][target_col] != v_id:
+                    return False
+
+        # Si toutes les étapes intermédiaires sont valides, le mouvement est OK
+        return True
+
+
+# --- Classes Pygame pour l'Interface (GUI) ---
+
+class GraphicalCar:
+    """
+    Représentation graphique d'un véhicule.
+    Contient l'ID pour la liaison avec la logique et les attributs Pygame.
+    """
+
+    def __init__(self, vehicle_logic: Vehicle):
+        self.id = vehicle_logic.id
+
+        # Dimensions en pixels
+        extendX = PER_SQ * vehicle_logic.size if vehicle_logic.orientation == "h" else PER_SQ
+        extendY = PER_SQ if vehicle_logic.orientation == "h" else PER_SQ * vehicle_logic.size
+
+        # Coordonnées de départ en pixels (GRILLE * PER_SQ)
+        startX = vehicle_logic.col * PER_SQ
+        startY = vehicle_logic.row * PER_SQ
+
+        # Définition de la couleur
+        if self.id == 'X':
+            self.colour = (204, 0, 0)  # Rouge
+        elif vehicle_logic.orientation == 'h':
+            self.colour = (0, 255, 0)  # Vert
+        else:
+            self.colour = (0, 0, 255)  # Bleu
+
+        # Attributs pour le glisser-déposer
+        self.rectDrag = False
+        self.offsetX = 0
+        self.offsetY = 0
+
+        # Objet Pygame Rect
+        self.rect = pygame.Rect(startX, startY, extendX, extendY)
+        self.current_logic_pos = (vehicle_logic.row, vehicle_logic.col)  # Position de la logique avant le drag
+
+
+class RushHourGUI:  # La classe principale du jeu
+
+    def __init__(self, initial_vehicles: List[Vehicle]):
+
+        Tk().wm_withdraw()  # Cache la fenêtre Tkinter principale (pour les popups)
+        pygame.init()
+
+        self.board_state = BoardState(initial_vehicles)  # L'état logique est notre référence !
+        self.g_cars = self._create_graphical_cars()  # Création des objets Pygame
         self.turns = 0
-        
-        pygame.init() #run pygame
-        surfaceSize = 480
-        surface = pygame.display.set_mode((surfaceSize, surfaceSize)) #make display window
-        
-        start = True #if it is beginning of program
-        self.inGame = True #loop condition
+        self.selected_car_id = None  # ID de la voiture en cours de déplacement
+        self.inGame = True
 
+        # Configuration de la fenêtre
+        surfaceSize = GRID_SIZE * PER_SQ
+        self.surface = pygame.display.set_mode((surfaceSize, surfaceSize))
+        pygame.display.set_caption("Rush Hour - Jouable")
+
+        # Boucle principale
+        self._main_loop()
+
+    def _load_game_from_file(self, filename: str) -> List[Vehicle]:
+        """Charge l'état initial des véhicules depuis un fichier texte."""
+        vehicles = []
+        try:
+            with open(filename, 'r') as file:
+                lines = file.readlines()
+                for line in lines:
+                    parts = line.strip().split(', ')
+                    if len(parts) == 4:
+                        # parts: [orientation, size, row, col]
+                        orientation, size_str, row_str, col_str = parts
+                        size, row, col = int(size_str), int(row_str), int(col_str)
+                        # On génère un ID simple ('X' pour la rouge, puis 'A', 'B', ...)
+                        id = 'X' if row == EXIT_ROW and col == 0 and orientation == 'h' else chr(
+                            ord('A') + len(vehicles))
+                        vehicles.append(Vehicle(id, orientation, size, row, col))
+        except FileNotFoundError:
+            messagebox.showerror('Erreur', f"Fichier {filename} non trouvé.")
+            sys.exit()
+        return vehicles
+
+    def _create_graphical_cars(self) -> Dict[str, GraphicalCar]:
+        """Convertit l'état logique en objets graphiques Pygame."""
+        g_cars = {}
+        # Assurez-vous que l'ID 'X' est toujours la voiture rouge
+        for v_id, vehicle_logic in self.board_state.vehicles.items():
+            g_cars[v_id] = GraphicalCar(vehicle_logic)
+        return g_cars
+
+    def _main_loop(self):
+        start = True
         while self.inGame:
-            self.ev = pygame.event.poll() #pygame events
-            if self.ev.type == pygame.QUIT: #if window exited
-                self.inGame = False
-            
-            elif self.ev.type == pygame.MOUSEBUTTONDOWN: #if the window has been left-clicked
-                self.clickObject()
 
-            elif self.ev.type == pygame.MOUSEBUTTONUP: #if the window has been released from the left-click
-                self.unclickObject()
+            # 1. Gestion des événements
+            self._handle_events()
 
-            elif self.ev.type == pygame.MOUSEMOTION: #if the lect click is still being clicked
-                self.objectMidAir()
+            # 2. Dessin
+            self._draw_board()
 
-            surface.fill((255,255,255)) #make the surface white
+            # 3. Affichage
+            pygame.display.flip()
 
-            for x in range(len(self.rectObjects)): #for each rectangle
-                surface.fill(self.rectObjects[x].colour, self.rectObjects[x].rect) #colour fill the rectangles
-                pygame.draw.rect(surface, (0,0,0), self.rectObjects[x].rect, 5) #draw rectangles, with black borders
-            
-            pygame.display.flip() #display on window
-            
-            if start: #if beginning of program
-                #create popup
-                messagebox.showinfo('Welcome!','Rush Hour\nGet the red car to the end.\n Click and drag to control the cars.')
+            if start:
+                messagebox.showinfo('Bienvenue !',
+                                    'Rush Hour\nAmenez la voiture rouge (X) à la sortie (colonne 5, ligne 2).\n Utilisez le glisser-déposer.')
                 start = False
 
-            self.gameOver()
+            # 4. Vérification de la fin du jeu
+            self._check_game_over()
 
-        pygame.quit() #quit program
+        pygame.quit()
+        sys.exit()
 
-    def clickObject(self): #when the window is clicked
-        for x in range(len(self.rectObjects)): #for every object
-            if self.rectObjects[x].rect.collidepoint(self.ev.pos): #if the coordinates of the click is within a rectangle
-                self.rectObjects[x].rectDrag = True #make it be in the air
-                self.mouseX, self.mouseY = self.ev.pos #get current mouse position
-                self.offsetX = self.rectObjects[x].rect.x - self.mouseX #get different between mouse and rectangle coordinates
-                self.offsetY = self.rectObjects[x].rect.y - self.mouseY
-                break #stop the loop
+    def _handle_events(self):
+        """Gère les entrées souris (clic, drag, relâchement)."""
 
-    def objectMidAir(self): #when the rectangle is being held (in air)
-        for x in range(len(self.rectObjects)): #for each rectangle
-            if self.rectObjects[x].rectDrag: #if the rectangle is in the air
-                self.mouseX, self.mouseY = self.ev.pos #get mouse position
-                self.rectObjects[x].rect.x = self.mouseX + self.offsetX #get midair rectangle coordinates
-                self.rectObjects[x].rect.y = self.mouseY + self.offsetY
+        self.ev = pygame.event.poll()
 
-    def unclickObject(self): #when the rectangle is let go
-        for x in range(len(self.rectObjects)): #for each rectangle
-            if self.rectObjects[x].rectDrag: #if the rectangle is in the air
+        if self.ev.type == pygame.QUIT:
+            self.inGame = False
 
-                perSq = 80 #one square is 80x80
-                #get the 'row and column' of where the rectangle is
-                makeshiftColumn, makeshiftRow = self.rectObjects[x].rect.x / 80, self.rectObjects[x].rect.y / 80
-                decimalColumn, decimalRow = makeshiftColumn % 1, makeshiftRow % 1
+        elif self.ev.type == pygame.MOUSEBUTTONDOWN:
+            self._click_object()
 
-                #depending on decimal part, whether to round up or round down
-                #math.ceil will get rid of decimal part and round up
-                #math.floor will get rid of decimal part and round down
-                if decimalColumn >= 0.5:
-                    jumpX = math.ceil(makeshiftColumn) * perSq
-                else:
-                    jumpX = math.floor(makeshiftColumn) * perSq   
-                if decimalRow >= 0.5:
-                    jumpY = math.ceil(makeshiftRow) * perSq
-                else:
-                    jumpY = math.floor(makeshiftRow) * perSq
-                #jump is the proposed coordinate following multiples of 80
-                #say the midair x-coordinate is something like 146, the jumpX will be 160
+        elif self.ev.type == pygame.MOUSEBUTTONUP:
+            self._unclick_object()
 
-                #make a temporary list without the rectangle being held for rectangle comparison
-                temporaryRectangles = self.rectObjects * 1
-                temporaryRectangles.remove(self.rectObjects[x])
+        elif self.ev.type == pygame.MOUSEMOTION:
+            self._object_mid_air()
 
-                #get the coordinates in the middle of the rectangle
-                middleY = (self.rectObjects[x].startY + self.rectObjects[x].extendY + self.rectObjects[x].startY) / 2
-                middleX = (self.rectObjects[x].startX + self.rectObjects[x].extendX + self.rectObjects[x].startX) / 2
-                moveAllowed = True #boolean for allowing the move
+    def _click_object(self):
+        """Sélectionne la voiture à l'endroit du clic."""
+        for g_car in self.g_cars.values():
+            if g_car.rect.collidepoint(self.ev.pos):
+                g_car.rectDrag = True
+                self.selected_car_id = g_car.id
 
-                if self.rectObjects[x].orientation == "h":
-                    countStart = int(self.rectObjects[x].currentX /80) #get the starting square that is needed to be checked for collisions
-                    countEnd = int(jumpX / 80) #get the last square that is needed to be checked for collision
-                    if countStart > countEnd: #if start is bigger then swap
-                        countStart, countEnd = countEnd, countStart
-                    
-                else: #same but just for vertical, swap X and Y
-                    countStart = int(self.rectObjects[x].currentY /80)
-                    countEnd = int(jumpY / 80)
-                    if countStart > countEnd:
-                        countStart, countEnd = countEnd, countStart
+                # Sauvegarde la position Pygame relative à la souris
+                mouseX, mouseY = self.ev.pos
+                g_car.offsetX = g_car.rect.x - mouseX
+                g_car.offsetY = g_car.rect.y - mouseY
 
-                #depending on size of car, where to check for collision
-                #okay i kind of lied about it being the 'middle', because for size 3 car
-                #it would check 1/3 and 2/3 of the rectangle
-                if self.rectObjects[x].size == 2:
-                    divisor = 2
+                # Sauvegarde la position logique actuelle (en cas d'annulation)
+                logic_car = self.board_state.vehicles[g_car.id]
+                g_car.current_logic_pos = (logic_car.row, logic_car.col)
+                break
 
-                else:
-                    divisor = 3
-                
+    def _object_mid_air(self):
+        """Déplace l'objet graphique pendant le glisser-déposer."""
+        if self.selected_car_id:
+            g_car = self.g_cars[self.selected_car_id]
+            if g_car.rectDrag:
+                mouseX, mouseY = self.ev.pos
+                g_car.rect.x = mouseX + g_car.offsetX
+                g_car.rect.y = mouseY + g_car.offsetY
 
-                for y in range(len(temporaryRectangles)): #for each rectangle
-                    for z in range(countStart, countEnd+1): #for each square between the move
-                        if self.rectObjects[x].orientation == "h":
-                            middleX = ((z*perSq) + (((z+1)*perSq)+(((self.rectObjects[x].size-1)*perSq)))) / divisor #get the new middle coordinate
-                            middleX2 = (((z*perSq) + (((z+1)*perSq)+(((self.rectObjects[x].size-1)*perSq)))) / divisor) * (divisor-1) #for size 3 cars
-                            #this monster if statement checks whether or not the 'middle' coordinate is between the coordinates of another rectangle or not
-                            if ((temporaryRectangles[y].startX <= middleX <= (temporaryRectangles[y].extendX + temporaryRectangles[y].startX)) or (temporaryRectangles[y].startX <= middleX2 <= (temporaryRectangles[y].extendX + temporaryRectangles[y].startX))) and (temporaryRectangles[y].startY <= middleY <= (temporaryRectangles[y].extendY + temporaryRectangles[y].startY)):
-                                moveAllowed = False
-                                #if there is a collision then it cannot move
-                                break
-                            else:
-                                moveAllowed = True
-                        else: #for vertical, same as above, just swap X and Y                            
-                            middleY = ((z*perSq) + (((z+1)*perSq)+(((self.rectObjects[x].size-1)*perSq)))) / divisor
-                            middleY2 = (((z*perSq) + (((z+1)*perSq)+(((self.rectObjects[x].size-1)*perSq)))) / divisor) * (divisor-1)
-                            if (temporaryRectangles[y].startX <= middleX <= (temporaryRectangles[y].extendX + temporaryRectangles[y].startX)) and ((temporaryRectangles[y].startY <= middleY <= (temporaryRectangles[y].extendY + temporaryRectangles[y].startY)) or (temporaryRectangles[y].startY <= middleY2 <= (temporaryRectangles[y].extendY + temporaryRectangles[y].startY))):
-                                moveAllowed = False
-                                break
-                            else:
-                                moveAllowed = True
-                                
-                    if moveAllowed == False:
-                            break
-                #this semi-monster if statement checks whether the new proposed coordinates of the rectangle is within the limits or not
-                #and also checks for collision
-                if (self.rectObjects[x].startLimitX <= jumpX < self.rectObjects[x].endLimitX) and (self.rectObjects[x].startLimitY <= jumpY < self.rectObjects[x].endLimitY) and moveAllowed:
-                    #update the necessary attributes of the rectangle
-                    self.rectObjects[x].rect = pygame.Rect(jumpX, jumpY, self.rectObjects[x].extendX, self.rectObjects[x].extendY)
-                    self.rectObjects[x].currentX = jumpX
-                    self.rectObjects[x].currentY = jumpY
-                    self.rectObjects[x].startX = jumpX
-                    self.rectObjects[x].startY = jumpY
-                    self.rectObjects[x].rectDrag = False
-                    self.turns += 1
+    def _unclick_object(self):
+        """Relâchement : vérifie le mouvement, l'applique à la logique ou annule."""
+        if not self.selected_car_id:
+            return
 
-                else: #if it doesnt match
-                    #put the rectangle back to where the user moved it from
-                    self.rectObjects[x].rect = pygame.Rect(self.rectObjects[x].currentX, self.rectObjects[x].currentY, self.rectObjects[x].extendX, self.rectObjects[x].extendY)
-                    self.rectObjects[x].rectDrag = False
-                    messagebox.showwarning('Error','You cannot make that move.') #error message popup
+        g_car = self.g_cars[self.selected_car_id]
+        g_car.rectDrag = False
 
-    def loadGame(self): #reading the file
-        self.carInfos = [] #list of car information
-        filename = str("game0.txt") #get 2nd file
-        file = open(filename,'r') #open it
-        lines = file.readlines() #save the file to a list
+        # Calculer la position d'atterrissage sur la grille (multiples de 80)
+        # On utilise math.floor(coord / PER_SQ) si l'on est moins à mi-chemin, et ceil si plus.
+        target_col_float = g_car.rect.x / PER_SQ
+        target_row_float = g_car.rect.y / PER_SQ
 
-        for x in range(len(lines)):
-            lines[x] = lines[x][:-1] #for each line, get rid of the \n that appears at the end
-            
-        for line in lines:
-            self.carInfos.append(line.split(', ')) #seperate each data to its own string and add to list
+        target_col = int(round(target_col_float))
+        target_row = int(round(target_row_float))
 
-    def makeRectangles(self): #make rectangle objects
-        self.rectObjects = [] #list of rectangle objects
-        for each in self.carInfos: #make obejcts
-            self.rectObjects.append(Rectangle(each[0], int(each[1]), int(each[2]), int(each[3])))
+        old_row, old_col = g_car.current_logic_pos
 
-    def gameOver(self): #if game is won
-        if self.rectObjects[0].startX == 320: #checks if starting coordinate of first car is at the winning position or not
-            messagebox.showinfo('Congratulations!','You have completed the game!\nYou did it in %d moves!' % self.turns) #victory popup
-            self.inGame = False #cut the loop
+        # Calcul du déplacement réel (delta)
+        delta_col = target_col - old_col
+        delta_row = target_row - old_row
+
+        logic_car = self.board_state.vehicles[g_car.id]
+
+        # Un seul des deux deltas doit être non nul selon l'orientation
+
+        if logic_car.orientation == 'h' and delta_row == 0 and delta_col != 0:
+            delta = delta_col
+        elif logic_car.orientation == 'v' and delta_col == 0 and delta_row != 0:
+            delta = delta_row
+        else:
+            delta = 0  # Mouvement invalide (diagonale, pas de mouvement, mauvaise direction)
+
+        # --- Cœur de la Vérification ---
+
+        if delta != 0 and self.board_state.is_move_valid(g_car.id, delta):
+
+            # Mouvement valide : Application à la logique
+            if logic_car.orientation == 'h':
+                logic_car.col = target_col
+            else:
+                logic_car.row = target_row
+
+            # Mise à jour de la grille interne du BoardState et des compteurs
+            self.board_state.grid = self.board_state._update_grid_matrix()
+            self.turns += 1
+
+            # Mise à jour de la position Pygame pour l'aligner parfaitement
+            g_car.rect.x = logic_car.col * PER_SQ
+            g_car.rect.y = logic_car.row * PER_SQ
+            g_car.current_logic_pos = (logic_car.row, logic_car.col)
+
+        else:
+            # Mouvement invalide : Annulation graphique (repositionnement)
+            g_car.rect.x = old_col * PER_SQ
+            g_car.rect.y = old_row * PER_SQ
+
+            if delta != 0:  # On affiche un message uniquement si un déplacement était tenté
+                messagebox.showwarning('Erreur', 'Mouvement invalide : Collision ou hors limites.')
+
+    def _draw_board(self):
+        """Dessine le plateau, les cases de grille et les véhicules."""
+
+        # Fond blanc
+        self.surface.fill((255, 255, 255))
+
+        # Dessiner la grille (lignes noires)
+        for i in range(GRID_SIZE):
+            # Lignes horizontales
+            pygame.draw.line(self.surface, (0, 0, 0), (0, i * PER_SQ), (GRID_SIZE * PER_SQ, i * PER_SQ), 1)
+            # Lignes verticales
+            pygame.draw.line(self.surface, (0, 0, 0), (i * PER_SQ, 0), (i * PER_SQ, GRID_SIZE * PER_SQ), 1)
+
+        # Dessiner la sortie (carré vert)
+        exit_rect = pygame.Rect(EXIT_COL * PER_SQ, EXIT_ROW * PER_SQ, PER_SQ, PER_SQ)
+        pygame.draw.rect(self.surface, (0, 200, 0), exit_rect, 0)  # Remplissage vert
+        pygame.draw.rect(self.surface, (0, 0, 0), exit_rect, 2)  # Bordure noire
+
+        # Dessiner les voitures
+        for g_car in self.g_cars.values():
+            # Remplissage
+            self.surface.fill(g_car.colour, g_car.rect)
+            # Bordures noires épaisses
+            pygame.draw.rect(self.surface, (0, 0, 0), g_car.rect, 5)
+
+    def _check_game_over(self):
+        """Vérifie la condition de victoire."""
+        if self.board_state.is_solved():
+            messagebox.showinfo('Félicitations !', f'Vous avez terminé en {self.turns} mouvements !')
+            self.inGame = False
 
 
+# --- Initialisation et Lancement ---
 
-game() #initialisre
+if __name__ == '__main__':
+    # Initialisation basée sur un jeu standard (comme celui que vous lisiez)
+    # Lisez le fichier ou définissez les véhicules ici
+
+    # Pour le test, on va définir un jeu initial simple à la main
+    # Vous pouvez le modifier pour lire votre 'game0.txt' si vous préférez.
+
+    # X: H, 2, L2, C0 (Rouge)
+    # A: V, 3, L0, C0 (Bloque X)
+    # B: H, 2, L0, C4
+    # C: V, 2, L4, C5 (Proche de la sortie)
+
+    initial_config = [
+        Vehicle('X', 'h', 2, 2, 0),
+        Vehicle('A', 'v', 2, 0, 0),
+        Vehicle('B', 'h', 2, 0, 4),
+        Vehicle('C', 'v', 2, 4, 5),
+    ]
+
+    # Début du jeu
+    RushHourGUI(initial_config)
