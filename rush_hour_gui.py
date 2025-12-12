@@ -2,7 +2,9 @@
 import pygame
 import sys
 from tkinter import messagebox, Tk
-from vehicle_logic import Vehicle, BoardState, PER_SQ, GRID_SIZE, EXIT_ROW, EXIT_COL
+from vehicle import Vehicle
+from board import BoardState
+from config import PER_SQ, GRID_SIZE, EXIT_ROW, EXIT_COL
 from typing import List
 
 # Masquer la fenêtre Tkinter principale pour les pop-ups

@@ -1,5 +1,6 @@
 # main.py
-from vehicle_logic import Vehicle, EXIT_ROW
+from vehicle import Vehicle
+from config import EXIT_ROW
 from rush_hour_gui import RushHourGUI
 import sys
 
