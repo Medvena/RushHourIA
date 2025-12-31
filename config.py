@@ -1,10 +1,10 @@
 # config.py
 
-# --- Constantes du Jeu ---
-GRID_SIZE = 6   # Taille de la grille (6x6)
-EXIT_ROW = 2    # La voiture rouge sort par la ligne 2 (indices 0 à 5)
-EXIT_COL = 5    # La sortie est à la colonne 5 (bord droit)
-PER_SQ = 80     # Taille d'une case en pixels (si besoin pour le GUI)
+# --- Game Constants ---
+GRID_SIZE = 6   # Grid size (6x6)
+EXIT_ROW = 2    # The red car exits from row 2 (0-based indices)
+EXIT_COL = 5    # The exit is at column 5 (right edge)
+PER_SQ = 80     # Cell size in pixels (GUI)
 
-# --- ID de la Voiture Cible ---
-RED_CAR_ID = 'X'
+# --- Target Vehicle ID ---
+RED_CAR_ID = "X"

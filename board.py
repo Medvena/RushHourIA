@@ -2,118 +2,113 @@
 
 import copy
 import math
-from typing import List, Tuple, Dict, Optional
+from typing import Dict, List, Optional
 
-# Imports des modules du projet
+# Project imports
 from vehicle import Vehicle
 from config import GRID_SIZE, EXIT_ROW, EXIT_COL, RED_CAR_ID
 
 
 class BoardState:
-    """Représente l'état complet du plateau logique."""
+    """Represents the full logical state of the board."""
 
     def __init__(self, vehicles: List[Vehicle]):
-        # Stocke les véhicules par leur ID pour un accès rapide
+        # Store vehicles by ID for fast access
         self.vehicles: Dict[str, Vehicle] = {v.id: v for v in vehicles}
-        # Matrice de la grille, mise à jour à l'initialisation
+        # Grid occupancy matrix, computed at initialization
         self.grid = self._update_grid_matrix()
 
     def __eq__(self, other):
-        """Vérifie si deux états de plateau sont identiques (utile pour l'IA)."""
-        if not isinstance(other, BoardState): return NotImplemented
+        """Check whether two board states are identical (useful for AI)."""
+        if not isinstance(other, BoardState):
+            return NotImplemented
         return self.vehicles == other.vehicles
 
     def __hash__(self):
-        """Calcule un hachage unique pour l'état du plateau (utile pour les ensembles de l'IA)."""
-        # Hache le tuple des véhicules pour obtenir un identifiant d'état unique
+        """Compute a unique hash for this board state (useful for AI sets/dicts)."""
         return hash(tuple(sorted(self.vehicles.items())))
 
     def _update_grid_matrix(self) -> List[List[Optional[str]]]:
-        """Construit la matrice GRID_SIZE x GRID_SIZE pour la vérification rapide des collisions."""
-        grid = [[None] * GRID_SIZE for _ in range(GRID_SIZE)]
-        
+        """Build a GRID_SIZE x GRID_SIZE occupancy matrix for fast collision checks."""
+        grid: List[List[Optional[str]]] = [[None] * GRID_SIZE for _ in range(GRID_SIZE)]
+
         for vehicle in self.vehicles.values():
-            # Remplit les cases occupées par le véhicule
-            if vehicle.orientation == 'h':
+            # Fill the cells occupied by the vehicle
+            if vehicle.orientation == "h":
                 for i in range(vehicle.size):
                     r, c = vehicle.row, vehicle.col + i
                     if 0 <= r < GRID_SIZE and 0 <= c < GRID_SIZE:
                         grid[r][c] = vehicle.id
-            else: # orientation == 'v'
+            else:  # vehicle.orientation == "v"
                 for i in range(vehicle.size):
                     r, c = vehicle.row + i, vehicle.col
                     if 0 <= r < GRID_SIZE and 0 <= c < GRID_SIZE:
                         grid[r][c] = vehicle.id
-                        
+
         return grid
 
     def is_solved(self) -> bool:
-        """Vérifie si la voiture rouge (RED_CAR_ID) est en position de victoire."""
+        """Return True if the red car (RED_CAR_ID) has reached the exit."""
         red_car = self.vehicles.get(RED_CAR_ID)
-        if red_car is None: return False
-        
-        # Vérifie si la voiture est sur la ligne de sortie et si son extrémité a dépassé la sortie.
+        if red_car is None:
+            return False
+
+        # The red car is solved if it is on the exit row and its right end crosses the exit column.
         return red_car.row == EXIT_ROW and (red_car.col + red_car.size) > EXIT_COL
 
-    def get_next_state(self, v_id: str, delta: int) -> Optional['BoardState']:
+    def get_next_state(self, v_id: str, delta: int) -> Optional["BoardState"]:
         """
-        Applique un mouvement valide et retourne un nouvel état de plateau.
-        Retourne None si le mouvement est invalide.
+        Apply a valid move and return a new board state.
+        Returns None if the move is invalid.
         """
         if not self.is_move_valid(v_id, delta):
             return None
-        
-        # 1. Créer une copie profonde de l'état actuel (important pour l'IA)
+
+        # 1) Deep copy current vehicles (important for AI search)
         new_vehicles = copy.deepcopy(list(self.vehicles.values()))
         new_board = BoardState(new_vehicles)
-        
-        # 2. Mettre à jour la position du véhicule dans la copie
+
+        # 2) Update the moved vehicle position in the copied state
         vehicle_to_move = new_board.vehicles[v_id]
-        
-        if vehicle_to_move.orientation == 'h':
+        if vehicle_to_move.orientation == "h":
             vehicle_to_move.col += delta
         else:
             vehicle_to_move.row += delta
 
-        # 3. Recalculer la matrice de grille pour le nouvel état
+        # 3) Recompute grid occupancy
         new_board.grid = new_board._update_grid_matrix()
-        
         return new_board
 
     def is_move_valid(self, v_id: str, delta: int) -> bool:
-        """Vérifie si le véhicule peut se déplacer de 'delta' cases (collision et limites)."""
+        """Check whether a vehicle can move by 'delta' cells (bounds + collisions)."""
         vehicle = self.vehicles.get(v_id)
-        if not vehicle or delta == 0: return False
+        if vehicle is None or delta == 0:
+            return False
 
         temp_row, temp_col = vehicle.row, vehicle.col
-        step = int(math.copysign(1, delta)) # +1 ou -1
-        
-        # Itérer sur chaque case du mouvement
+        step = int(math.copysign(1, delta))  # +1 or -1
+
+        # Iterate through each cell step of the movement
         for _ in range(abs(delta)):
-            
-            # Déterminer la case "à l'avant" (à l'extrémité dans le sens du mouvement)
-            if vehicle.orientation == 'h':
-                # La case à vérifier est l'extrémité du véhicule, après le pas
+            # Determine the "front" cell to test (the leading edge in movement direction)
+            if vehicle.orientation == "h":
                 target_col = temp_col + vehicle.size if step > 0 else temp_col - 1
                 target_row = temp_row
                 temp_col += step
-            else: # 'v'
+            else:  # "v"
                 target_row = temp_row + vehicle.size if step > 0 else temp_row - 1
                 target_col = temp_col
                 temp_row += step
 
-            # 1. Vérification des limites du plateau (sauf pour la sortie de la voiture X)
+            # 1) Board bounds check (special-case: red car exits to the right)
             if not (0 <= target_row < GRID_SIZE and 0 <= target_col < GRID_SIZE):
-                # Cas spécial : la voiture rouge (X) sort par la droite
                 if v_id == RED_CAR_ID and target_row == EXIT_ROW and target_col == GRID_SIZE:
-                    continue # Le mouvement est permis car c'est la sortie
-                return False # Limite dépassée, mouvement invalide
+                    # Allow the red car to move through the exit
+                    continue
+                return False
 
-            # 2. Vérification de la collision (si la case est dans la grille)
-            if 0 <= target_row < GRID_SIZE and 0 <= target_col < GRID_SIZE:
-                if self.grid[target_row][target_col] is not None:
-                    # La case est occupée par une autre voiture
-                    return False
-                    
-        # Si toutes les cases traversées sont vides (ou la sortie pour X), le mouvement est valide
+            # 2) Collision check (only for in-grid cells)
+            if self.grid[target_row][target_col] is not None:
+                return False
+
         return True
