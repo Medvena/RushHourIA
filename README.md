@@ -88,6 +88,7 @@ PXXQ.O
 P..Q..
 B...CC
 B.RRR.
+```
 
 Les orientations et tailles des véhicules sont **déduites automatiquement** lors du chargement.
 
