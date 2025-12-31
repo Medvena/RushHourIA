@@ -2,6 +2,7 @@
 from vehicle import Vehicle
 from config import EXIT_ROW
 from rush_hour_gui import RushHourGUI
+from levels import load_level
 import sys
 
 
@@ -39,14 +40,12 @@ def load_game_from_file(filename: str) -> list[Vehicle]:
     return vehicles
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    try:
+        vehicles = load_level(1)  # level 1..40
+    except Exception as e:
+        print(f"Level load error: {e}")
+        sys.exit(1)
 
-    filename = 'game0.txt'
-    initial_vehicles = load_game_from_file(filename)
-
-    if not initial_vehicles:
-        print("Erreur: Aucun véhicule n'a été chargé. Vérifiez le fichier.")
-        sys.exit()
-
-    game = RushHourGUI(initial_vehicles)
+    game = RushHourGUI(vehicles)
     game.run()
