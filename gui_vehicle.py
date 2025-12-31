@@ -4,6 +4,28 @@ import pygame
 from vehicle import Vehicle
 from config import PER_SQ
 
+VEHICLE_COLORS = {
+    # Cars
+    "X": (204, 0, 0),     # red
+    "A": (144, 238, 144), # light green
+    "B": (255, 165, 0),   # orange
+    "C": (173, 216, 230), # light blue
+    "D": (255, 182, 193), # pink
+    "E": (186, 85, 211),  # purple
+    "F": (0, 128, 0),     # dark green
+    "G": (90, 90, 90),    # dark gray (black-ish)
+    "H": (245, 245, 220), # beige
+    "I": (255, 255, 224), # light yellow
+    "J": (139, 69, 19),   # brown
+    "K": (128, 128, 0),   # khaki
+
+    # Trucks
+    "O": (255, 215, 0),   # yellow
+    "P": (216, 191, 216), # light violet
+    "Q": (0, 0, 139),     # dark blue
+    "R": (64, 224, 208),  # turquoise
+}
+
 class GUIVehicle:
     """
     Associe les propriétés graphiques (Pygame) à un objet Vehicle logique.
@@ -25,12 +47,7 @@ class GUIVehicle:
         startY = vehicle_logic.row * PER_SQ
         
         # Définition de la couleur
-        if self.id == 'X':
-            self.colour = (204, 0, 0)  # Rouge (voiture à sortir)
-        elif vehicle_logic.orientation == 'h':
-            self.colour = (0, 255, 0)  # Vert (Horizontal standard)
-        else:
-            self.colour = (0, 0, 255)  # Bleu (Vertical standard)
+        self.colour = VEHICLE_COLORS.get(self.id, (128, 128, 128))
             
         # Objet Pygame Rect (position actuelle et taille)
         self.rect = pygame.Rect(startX, startY, extendX, extendY)
