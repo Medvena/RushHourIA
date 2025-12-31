@@ -1,4 +1,4 @@
-# rush_hour_gui.py (VERSION FINALE COMBINÉE)
+# rush_hour_gui.py
 
 import pygame
 import sys
@@ -180,37 +180,38 @@ class RushHourGUI:
         for g_car in self.g_vehicles.values():
             g_car.draw(self.surface)
 
-    def _check_game_over(self):
+
+    def _check_game_over(self) -> bool:
         """Vérifie la condition de victoire."""
         if self.board_state.is_solved():
             messagebox.showinfo('Félicitations !', f'Vous avez terminé en {self.turns} mouvements !')
             self.inGame = False
-            pygame.quit()
-            sys.exit()
+            return True
+        return False
 
-    def run(self):
+    def run(self) -> bool:
         """Lance la boucle principale de Pygame et gère les événements."""
-        start = True
-        while self.inGame:
+        won = False
 
+        while self.inGame:
             self.ev = pygame.event.poll()
+
             if self.ev.type == pygame.QUIT:
                 self.inGame = False
+                break
             elif self.ev.type == pygame.MOUSEBUTTONDOWN:
                 self._click_object()
             elif self.ev.type == pygame.MOUSEBUTTONUP:
                 self._unclick_object()
             elif self.ev.type == pygame.MOUSEMOTION:
-                self._object_mid_air() # <-- L'appel qui manquait !
+                self._object_mid_air()
 
             self._draw_board()
             pygame.display.flip()
 
-            if start:
-                messagebox.showinfo('Bienvenue !', 'Rush Hour')
-                start = False
-
-            self._check_game_over()
+            if self._check_game_over():
+                won = True
+                break
 
         pygame.quit()
-        sys.exit()
+        return won
