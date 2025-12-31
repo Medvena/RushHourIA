@@ -5,3 +5,316 @@ PXXQ.O
 P..Q..
 B...CC
 B.RRR.
+
+# 2 | Beginner
+A..OOO
+A..B.P
+XX.BCP
+QQQ.CP
+..D.EE
+FFDGG.
+
+# 3 | Beginner
+......
+......
+.XXO..
+.AAO.P
+.B.O.P
+.BCC.P
+
+# 4 | Beginner
+O..P..
+O..P..
+OXXP..
+..AQQQ
+..A..B
+..RRRB
+
+# 5 | Beginner
+AA.O.B
+P..OQB
+PXXOQG
+PRRRQG
+D...EE
+D...FF
+
+# 6 | Beginner
+AA.B..
+CC.BOP
+.XXQOP
+DDEQOP
+F.EQ..
+F..RRR
+
+# 7 | Beginner
+.ABBCD
+.A.ECD
+.XXE.F
+..II.F
+...H..
+...H..
+
+# 8 | Beginner
+...AAO
+..BBCO
+XXDECO
+FFDEGG
+HHIPPP
+KKIQQQ
+
+# 9 | Beginner
+.ABBCC
+.A.DEE
+XX.DOF
+PQQQOF
+P.G.OH
+P.G..H
+
+# 10 | Beginner
+AAB.CC
+DDB..O
+PXX..O
+PQQQ.O
+P..EFF
+GG.EHH
+
+# 11 | Intermediate
+OAAP..
+O..P..
+OXXP..
+..BQQQ
+..B..E
+..RRRE
+
+# 12 | Intermediate
+ABB..O
+A.P..O
+XXP..O
+..PQQQ
+....C.
+RRR.C.
+
+# 13 | Intermediate
+AABBC.
+..D.CO
+.EDXXO
+PE.FFO
+P..GHH
+PIIGKK
+
+# 14 | Intermediate
+AAB...
+..B.CC
+DEXXFG
+DEHHFG
+..I.JJ
+KKI...
+
+# 15 | Intermediate
+.AABB.
+CCDDOP
+QRXXOP
+QREFOP
+QREFGG
+.HHII.
+
+# 16 | Intermediate
+AABBCO
+D.EECO
+DFPXXO
+.FPQQQ
+..P...
+GG....
+
+# 17 | Intermediate
+AOOO..
+A.BBCC
+XXD...
+EEDP..
+QQQPFG
+RRRPFG
+
+# 18 | Intermediate
+AABO..
+CCBO..
+PXXO..
+PQQQ..
+PDD...
+RRR...
+
+# 19 | Intermediate
+..ABB.
+..A.J.
+.DXXJ.
+.DEEF.
+.OOOF.
+......
+
+# 20 | Intermediate
+A..OOO
+ABBC..
+XXDC.P
+..D..P
+..EFFP
+..EQQQ
+
+# 21 | Advanced
+AABO..
+P.BO..
+PXXO..
+PQQQ..
+......
+...RRR
+
+# 22 | Advanced
+..AOOO
+B.APCC
+BXXP..
+.D.PEE
+FDGG.H
+FQQQ.H
+
+# 23 | Advanced
+..OOOP
+..ABBP
+..AXXP
+..CDEE
+..CDFF
+..QQQ.
+
+# 24 | Advanced
+..ABB.
+.CA...
+DCXXE.
+DFF.E.
+OOO.G.
+HH..G.
+
+# 25 | Advanced
+AAB.CC
+DDB..O 
+PXX.EO
+PQQQEO
+PF.GHH
+.F.GII
+
+# 26 | Advanced
+.A.OOO
+BA.CP.
+BXXCPD
+ERRRPD
+E.F..G
+..FHHG
+
+# 27 | Advanced
+ABBO..
+ACCO..
+XXDO.P
+..DEEP
+..F..P
+..FRRR
+
+# 28 | Advanced
+OOOA..
+..PABB
+XXP...
+CDPEEQ
+CDRRRQ
+FFGG.Q
+
+# 29 | Advanced
+OOO.P.
+..A.P.
+XXA.PB
+CDDEEB
+CFFG.H
+RRRG.H
+
+# 30 | Advanced
+O.APPP
+O.AB..
+OXXB..
+CCDD.Q
+.....Q
+EEFF.Q
+
+# 31 | Expert
+AA.OOO
+...BCC
+DXXB.P
+D.QEEP
+FFQ..P
+..QRRR
+
+# 32 | Expert
+AAOBCC
+..OB..
+XXO...
+DEEFFP
+D..K.P
+HH.K.P
+
+# 33 | Expert
+.AR.BB
+.AR...
+XXR...
+IDDEEP
+IFFGHP
+QQQGHP
+
+# 34 | Expert
+A..RRR
+A..B.P
+XX.BCP
+QQQDCP
+..EDFF
+IIEHH.
+
+# 35 | Expert
+..OAAP
+..OB.P
+XXOB.P
+KQQQ..
+KDDEF.
+GG.EF.
+
+# 36 | Expert
+OPPPAA
+OBCC.Q
+OBXX.Q
+RRRD.Q
+..EDFF
+GGE...
+
+# 37 | Expert
+AAB.CC
+DDB.OP
+QXX.OP
+QRRROP
+Q..EFF
+GG.EHH
+
+# 38 | Expert
+A..OOO
+ABBC..
+XXDC.R
+..DEER
+..FGGR
+..FQQQ
+
+# 39 | Expert
+..AOOO
+..AB..
+XXCB.R
+DDCEER
+FGHH.R
+FGII..
+
+# 40 | Expert
+OAA.B.
+OCD.BP
+OCDXXP
+QQQE.P
+..FEGG
+HHFII.
+
