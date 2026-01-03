@@ -5,8 +5,9 @@ import sys
 # Imports
 from levels import load_level, list_levels
 from rush_hour_gui import RushHourGUI
-from solver_ia import train_ai, state_to_tensor
 from config import GRID_SIZE, PER_SQ
+from solver_ia import train_global_model, get_trained_agent, state_to_tensor
+import os
 
 # --- CONFIG ---
 WINDOW_SIZE = GRID_SIZE * PER_SQ
@@ -46,8 +47,13 @@ def play_game_manual(level_to_play):
     game.run()
 
 
-def watch_ai_play(agent, level_number):
-    """L'IA joue le niveau."""
+def watch_ai_play_global(level_number):
+    """Charge le modèle global et tente de résoudre."""
+    agent = get_trained_agent()
+    if agent is None:
+        print("Erreur : Aucun modèle entraîné trouvé ! Cliquez sur 'Entraîner' d'abord.")
+        return
+
     try:
         vehicles = load_level(level_number)
     except:
@@ -59,22 +65,30 @@ def watch_ai_play(agent, level_number):
 
     done = False
     steps = 0
-    pygame.display.set_caption(f"IA en action - Niveau {level_number}")
+    pygame.display.set_caption(f"IA (Modèle Global) - Niveau {level_number}")
 
     while not done and steps < 150:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return
 
-        action = agent.act(state)
-        v_id, delta = agent.decode_action(action)
+        # L'IA utilise son cerveau pré-entraîné
+        action_idx = agent.act(state)
+        v_id, delta = agent.decode_action(action_idx)
+
+        # Vérif si la voiture existe dans ce niveau
+        if v_id not in game.board_state.vehicles:
+            # L'IA hallucine une voiture qui n'est pas là (ça peut arriver sur les nouveaux niveaux)
+            print(f"IA essaie de bouger {v_id} (n'existe pas ici)")
+            steps += 1
+            continue
+
         next_board = game.board_state.get_next_state(v_id, delta)
 
         if next_board:
             game.board_state = next_board
             state = state_to_tensor(game.board_state)
 
-            # Update visuel
             game.g_vehicles[v_id].logic = next_board.vehicles[v_id]
             game.g_vehicles[v_id].update_position_from_logic()
 
@@ -90,45 +104,29 @@ def watch_ai_play(agent, level_number):
     time.sleep(1)
 
 
-def run_ai_demo(screen, font, level_number):
-    """Entraîne l'IA sur le niveau demandé puis lance la démo."""
+def run_global_training(screen, font):
+    """Lance l'entraînement sur TOUS les niveaux."""
     screen.fill(WHITE)
-
-    # Texte de chargement
-    msg1 = font.render(f"Analyse du Niveau {level_number}...", True, BLACK)
-    msg2 = font.render("(Calcul de la solution optimale)", True, GRAY_TEXT)
-
-    screen.blit(msg1, (WINDOW_SIZE // 2 - msg1.get_width() // 2, WINDOW_SIZE // 2 - 20))
-    screen.blit(msg2, (WINDOW_SIZE // 2 - msg2.get_width() // 2, WINDOW_SIZE // 2 + 20))
+    msg = font.render("Entraînement Global en cours...", True, BLACK)
+    msg2 = font.render("(Ceci peut prendre quelques secondes)", True, GRAY_TEXT)
+    screen.blit(msg, (50, WINDOW_SIZE // 2 - 20))
+    screen.blit(msg2, (50, WINDOW_SIZE // 2 + 20))
     pygame.display.flip()
 
-    try:
-        # On charge le niveau spécifique
-        vehicles = load_level(level_number)
-
-        # Le Professeur BFS trouve la solution pour CE niveau
-        # et l'IA apprend cette solution par cœur.
-        agent = train_ai(vehicles, episodes=1)
-
-        # On regarde le résultat
-        watch_ai_play(agent, level_number)
-
-    except Exception as e:
-        print(f"Erreur IA : {e}")
+    # Appel de la fonction lourde
+    train_global_model()
 
 
 def main_menu():
     pygame.init()
     screen = pygame.display.set_mode((WINDOW_SIZE, WINDOW_SIZE))
-    pygame.display.set_caption("Menu Rush Hour")
+    pygame.display.set_caption("Projet IA - Rush Hour")
 
-    font_title = pygame.font.SysFont("Arial", 50, bold=True)
-    font_btn = pygame.font.SysFont("Arial", 28)
-    font_small = pygame.font.SysFont("Arial", 24)
+    font_title = pygame.font.SysFont("Arial", 40, bold=True)
+    font_btn = pygame.font.SysFont("Arial", 24)
 
-    # État du menu
     current_level = 1
-    max_levels = list_levels()  # Fonction importée de levels.py
+    max_levels = list_levels()
 
     running = True
     while running:
@@ -136,58 +134,59 @@ def main_menu():
         click = False
 
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:
-                    click = True
+            if event.type == pygame.QUIT: running = False
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1: click = True
 
         screen.fill(WHITE)
 
         # Titre
-        title = font_title.render("RUSH HOUR", True, BLACK)
-        screen.blit(title, (WINDOW_SIZE // 2 - title.get_width() // 2, 50))
+        title = font_title.render("RUSH HOUR - IA", True, BLACK)
+        screen.blit(title, (WINDOW_SIZE // 2 - title.get_width() // 2, 30))
 
-        # --- SÉLECTEUR DE NIVEAU ---
-        # On dessine "Niveau X" au milieu
+        # --- ETAT DU MODÈLE ---
+        # On vérifie si le fichier existe pour afficher un indicateur
+        model_exists = os.path.exists("rush_hour_model.pth")
+        status_color = (50, 200, 50) if model_exists else (200, 50, 50)
+        status_text = "Modèle : PRÊT" if model_exists else "Modèle : VIDE"
+        pygame.draw.circle(screen, status_color, (30, 30), 10)
+
+        # --- GROS BOUTON ENTRAINEMENT ---
+        rect_train = draw_button(screen, "GÉNÉRER & ENTRAÎNER LE MODÈLE", 40, 90, WINDOW_SIZE - 80, 50, font_btn,
+                                 mouse_pos, (255, 140, 0), (255, 165, 0))
+
+        # --- SELECTEUR ---
         lvl_text = font_btn.render(f"Niveau {current_level}", True, BLACK)
-        screen.blit(lvl_text, (WINDOW_SIZE // 2 - lvl_text.get_width() // 2, 140))
-
-        # Bouton Moins (-)
-        rect_minus = draw_button(screen, "-", 120, 130, 40, 40, font_btn, mouse_pos, GRAY_TEXT, (100, 100, 100))
-        # Bouton Plus (+)
-        rect_plus = draw_button(screen, "+", WINDOW_SIZE - 160, 130, 40, 40, font_btn, mouse_pos, GRAY_TEXT,
+        screen.blit(lvl_text, (WINDOW_SIZE // 2 - lvl_text.get_width() // 2, 170))
+        rect_minus = draw_button(screen, "-", 120, 160, 40, 40, font_btn, mouse_pos, GRAY_TEXT, (100, 100, 100))
+        rect_plus = draw_button(screen, "+", WINDOW_SIZE - 160, 160, 40, 40, font_btn, mouse_pos, GRAY_TEXT,
                                 (100, 100, 100))
 
-        # --- BOUTONS D'ACTION ---
-        btn_w, btn_h = 240, 55
-        center_x = (WINDOW_SIZE - btn_w) // 2
+        # --- ACTIONS ---
+        btn_w = 220
+        rect_play = draw_button(screen, "Jouer (Humain)", (WINDOW_SIZE - btn_w) // 2, 240, btn_w, 50, font_btn,
+                                mouse_pos)
 
-        rect_play = draw_button(screen, "Jouer (Humain)", center_x, 220, btn_w, btn_h, font_btn, mouse_pos)
-        rect_ai = draw_button(screen, "IA résout ce niveau", center_x, 300, btn_w, btn_h, font_btn, mouse_pos,
-                              (70, 180, 130), (100, 200, 150))  # Bouton Vert pour l'IA
-        rect_quit = draw_button(screen, "Quitter", center_x, 380, btn_w, btn_h, font_btn, mouse_pos, RED_BTN,
-                                (220, 80, 80))
+        # Bouton IA désactivé (gris) si pas de modèle
+        ia_color = (70, 180, 130) if model_exists else (200, 200, 200)
+        rect_ai = draw_button(screen, "IA (Modèle Global)", (WINDOW_SIZE - btn_w) // 2, 310, btn_w, 50, font_btn,
+                              mouse_pos, ia_color, ia_color)
 
-        # LOGIQUE DES CLICS
+        rect_quit = draw_button(screen, "Quitter", (WINDOW_SIZE - btn_w) // 2, 400, btn_w, 50, font_btn, mouse_pos,
+                                (200, 50, 50), (220, 80, 80))
+
         if click:
-            if rect_minus.collidepoint(mouse_pos):
-                if current_level > 1:
-                    current_level -= 1
-
-            elif rect_plus.collidepoint(mouse_pos):
-                if current_level < max_levels:
-                    current_level += 1
-
+            if rect_train.collidepoint(mouse_pos):
+                run_global_training(screen, font_btn)
+            elif rect_minus.collidepoint(mouse_pos) and current_level > 1:
+                current_level -= 1
+            elif rect_plus.collidepoint(mouse_pos) and current_level < max_levels:
+                current_level += 1
             elif rect_play.collidepoint(mouse_pos):
                 play_game_manual(current_level)
                 screen = pygame.display.set_mode((WINDOW_SIZE, WINDOW_SIZE))
-
-            elif rect_ai.collidepoint(mouse_pos):
-                # On passe le niveau choisi à la fonction
-                run_ai_demo(screen, font_small, current_level)
+            elif rect_ai.collidepoint(mouse_pos) and model_exists:
+                watch_ai_play_global(current_level)
                 screen = pygame.display.set_mode((WINDOW_SIZE, WINDOW_SIZE))
-
             elif rect_quit.collidepoint(mouse_pos):
                 running = False
 

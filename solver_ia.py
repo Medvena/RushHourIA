@@ -4,188 +4,214 @@ import torch.optim as optim
 import numpy as np
 import random
 import copy
+import os
 from collections import deque
 from config import GRID_SIZE, RED_CAR_ID
 from board import BoardState
+from levels import load_level, list_levels
 
 
-# --- 1. LE MODÈLE (L'Élève) ---
+# --- 1. LE MODÈLE ---
 class RushHourNet(nn.Module):
     def __init__(self, output_size):
         super(RushHourNet, self).__init__()
-        # On garde le même cerveau
-        self.fc1 = nn.Linear(GRID_SIZE * GRID_SIZE, 256)
-        self.fc2 = nn.Linear(256, 128)
-        self.fc3 = nn.Linear(128, output_size)
+        # On garde une architecture capable
+        self.fc1 = nn.Linear(GRID_SIZE * GRID_SIZE, 512)
+        self.fc2 = nn.Linear(512, 256)
+        self.fc3 = nn.Linear(256, 128)
+        self.fc4 = nn.Linear(128, output_size)
         self.relu = nn.ReLU()
 
     def forward(self, x):
         x = x.view(-1, GRID_SIZE * GRID_SIZE)
         x = self.relu(self.fc1(x))
         x = self.relu(self.fc2(x))
-        return self.fc3(x)
+        x = self.relu(self.fc3(x))
+        return self.fc4(x)
 
 
 def state_to_tensor(board_state):
-    # Transformation de la grille en chiffres pour l'IA
     matrix = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
     for r in range(GRID_SIZE):
         for c in range(GRID_SIZE):
             cell_id = board_state.grid[r][c]
             if cell_id is not None:
                 if cell_id == RED_CAR_ID:
-                    matrix[r][c] = 1.0  # La cible
+                    matrix[r][c] = 1.0  # La voiture cible (X)
                 else:
-                    matrix[r][c] = 0.5  # Les obstacles
+                    matrix[r][c] = 0.5  # Les autres
     return torch.tensor(matrix).unsqueeze(0)
 
 
-# --- 2. LE PROFESSEUR (Algorithme BFS) ---
+# --- 2. LE PROFESSEUR (BFS) ---
 class SolverBFS:
-    """Trouve le chemin le plus court pour résoudre le niveau."""
-
     @staticmethod
     def solve(start_board: BoardState):
-        # File d'attente : (BoardState, liste_des_actions_pour_arriver_la)
         queue = deque([(start_board, [])])
-
-        # Pour ne pas tourner en rond
         visited = set()
         visited.add(hash(start_board))
 
-        print("Le Professeur (BFS) réfléchit à la solution...")
+        # Sécurité pour ne pas chercher indéfiniment si pas de solution
+        max_depth = 50000
+        loops = 0
 
         while queue:
             current_board, path = queue.popleft()
+            loops += 1
+            if loops > max_depth:
+                return None
 
             if current_board.is_solved():
-                return path  # On retourne la liste des coups gagnants
+                return path
 
-            # On teste tous les mouvements possibles
             for v_id in current_board.vehicles:
-                for delta in [-1, 1]:  # Reculer ou Avancer
+                for delta in [-1, 1]:
                     if current_board.is_move_valid(v_id, delta):
                         next_board = current_board.get_next_state(v_id, delta)
                         h = hash(next_board)
-
                         if h not in visited:
                             visited.add(h)
-                            # On ajoute ce nouvel état à explorer
-                            # Action stockée sous forme (v_id, delta)
-                            new_path = path + [(v_id, delta)]
-                            queue.append((next_board, new_path))
-
-        return None  # Pas de solution trouvée
+                            queue.append((next_board, path + [(v_id, delta)]))
+        return None
 
 
-# --- 3. L'AGENT HYBRIDE ---
+# --- 3. L'AGENT ---
 class Agent:
-    def __init__(self, vehicle_ids):
-        self.vehicle_ids = vehicle_ids
-        self.action_size = len(vehicle_ids) * 2
+    def __init__(self):
+        # CORRECTION ICI : On prévoit assez de place pour A-Z
+        # Z est la 26ème lettre. 26 * 2 directions = 52.
+        # On met 60 pour être large et éviter le bug de la voiture X
+        self.action_size = 60
 
-        # Le cerveau
         self.model = RushHourNet(self.action_size)
-
-        # Pour l'apprentissage supervisé, on utilise CrossEntropyLoss
-        self.optimizer = optim.Adam(self.model.parameters(), lr=0.005)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=0.001)
         self.criterion = nn.CrossEntropyLoss()
+        self.epsilon = 0.0
 
-        self.epsilon = 0.0  # Plus besoin d'aléatoire, l'IA suit le prof
+    def encode_action(self, v_id, delta):
+        """Transforme (Voiture, Direction) en un chiffre unique."""
+        # On utilise le code ASCII pour avoir un ID unique par lettre
+        # 'A' = 65. Donc ord(v) - 65 donne 0 pour A, 1 pour B... 23 pour X.
+        if not v_id: return 0
+
+        # On prend juste la première lettre de l'ID pour simplifier
+        idx = ord(v_id[0].upper()) - ord('A')
+
+        # Sécurité : si c'est un caractère bizarre, on le met à 0
+        if idx < 0 or idx > 29:
+            idx = 0
+
+        # Pair = Avancer (+), Impair = Reculer (-)
+        direction_bit = 0 if delta > 0 else 1
+        action = (idx * 2) + direction_bit
+
+        # Double sécurité pour ne pas dépasser la taille du réseau
+        if action >= self.action_size:
+            return 0
+
+        return action
+
+    def decode_action(self, action_idx):
+        """Transforme un chiffre en (Voiture, Direction)."""
+        idx = action_idx // 2
+        direction_bit = action_idx % 2
+
+        delta = 1 if direction_bit == 0 else -1
+        # On retrouve la lettre : 0 -> A, 1 -> B...
+        v_id = chr(ord('A') + idx)
+
+        return v_id, delta
 
     def act(self, state_tensor):
-        # L'IA prédit le meilleur coup
         with torch.no_grad():
             logits = self.model(state_tensor)
         return torch.argmax(logits).item()
 
-    def encode_action(self, v_id, delta):
-        # Transforme ("A", 1) en un chiffre (ex: 3) pour le réseau
-        try:
-            v_idx = self.vehicle_ids.index(v_id)
-            # Pair = Avancer (+1), Impair = Reculer (-1)
-            is_backward = 1 if delta < 0 else 0
-            return (v_idx * 2) + is_backward
-        except ValueError:
-            return 0
-
-    def decode_action(self, action_idx):
-        # Transforme un chiffre en ("A", 1)
-        v_idx = action_idx // 2
-        delta = 1 if action_idx % 2 == 0 else -1
-        if v_idx < len(self.vehicle_ids):
-            return self.vehicle_ids[v_idx], delta
-        return None, 0
-
     def train_supervised(self, training_data, epochs=50):
-        """
-        training_data : liste de (Tensor_Etat, Action_Correcte_Index)
-        """
         self.model.train()
-        print(f"Entraînement de l'IA sur {len(training_data)} exemples...")
-
+        print(f"   -> Entraînement sur {len(training_data)} mouvements...")
         for epoch in range(epochs):
-            total_loss = 0
             random.shuffle(training_data)
-
-            # On découpe en batchs de 16
-            batch_size = 16
+            batch_size = 64
             for i in range(0, len(training_data), batch_size):
                 batch = training_data[i:i + batch_size]
-
                 states = torch.cat([x[0] for x in batch])
-                target_actions = torch.tensor([x[1] for x in batch], dtype=torch.long)
+                actions = torch.tensor([x[1] for x in batch], dtype=torch.long)
 
                 self.optimizer.zero_grad()
                 outputs = self.model(states)
-
-                loss = self.criterion(outputs, target_actions)
+                loss = self.criterion(outputs, actions)
                 loss.backward()
                 self.optimizer.step()
 
-                total_loss += loss.item()
+    # --- SAUVEGARDE ET CHARGEMENT ---
+    def save(self, filename="rush_hour_model.pth"):
+        torch.save(self.model.state_dict(), filename)
+        print(f"Modèle sauvegardé avec succès dans {filename}")
 
-            if (epoch + 1) % 10 == 0:
-                print(f"Epoch {epoch + 1}/{epochs} - Perte (Erreur): {total_loss:.4f}")
+    def load(self, filename="rush_hour_model.pth"):
+        if os.path.exists(filename):
+            try:
+                self.model.load_state_dict(torch.load(filename))
+                self.model.eval()
+                print(f"Modèle chargé : {filename}")
+                return True
+            except:
+                print("Erreur de chargement du modèle (taille incompatible ?).")
+                return False
+        return False
 
 
-# --- 4. FONCTION PRINCIPALE ---
-def train_ai(initial_vehicles, episodes=1):
-    # Note : 'episodes' ne sert plus ici car on résout une fois, puis on apprend.
+# --- 4. ENTRAINEMENT GLOBAL ---
+def train_global_model():
+    """Entraîne l'IA sur TOUS les niveaux disponibles."""
+    print("\n--- GÉNÉRATION DE LA BASE DE DONNÉES ---")
 
-    # 1. Préparer l'agent
-    vehicle_ids = [v.id for v in initial_vehicles]
-    agent = Agent(vehicle_ids)
+    agent = Agent()  # Initialisation propre
+    global_training_data = []
 
-    # 2. Le Professeur résout le niveau
-    initial_board = BoardState(copy.deepcopy(initial_vehicles))
-    solution_path = SolverBFS.solve(initial_board)
+    num_levels = list_levels()
+    print(f"Analyse de {num_levels} niveaux...")
 
-    if not solution_path:
-        print("Erreur : Le professeur n'a pas trouvé de solution (niveau impossible ?).")
-        return agent
+    for i in range(1, num_levels + 1):
+        try:
+            vehicles = load_level(i)
+            board = BoardState(copy.deepcopy(vehicles))
 
-    print(f"Solution trouvée en {len(solution_path)} coups !")
-    print("Génération des données d'entraînement...")
+            # Le Professeur résout
+            path = SolverBFS.solve(board)
 
-    # 3. On crée les données d'entraînement (Data Augmentation)
-    # On rejoue la partie gagnante et on enregistre : "Dans cet état -> Fais ça"
-    training_data = []
-    board = BoardState(copy.deepcopy(initial_vehicles))
+            if path:
+                # Data Augmentation : On apprend chaque étape du chemin gagnant
+                temp_board = BoardState(copy.deepcopy(vehicles))
+                for v_id, delta in path:
+                    state = state_to_tensor(temp_board)
+                    action = agent.encode_action(v_id, delta)
 
-    for v_id, delta in solution_path:
-        state_tensor = state_to_tensor(board)
-        action_idx = agent.encode_action(v_id, delta)
+                    global_training_data.append((state, action))
 
-        # On ajoute l'exemple à la liste
-        training_data.append((state_tensor, action_idx))
+                    # On avance le plateau virtuel
+                    temp_board = temp_board.get_next_state(v_id, delta)
+                print(f"[OK] Niveau {i} : {len(path)} coups ajoutés.")
+            else:
+                print(f"[X] Niveau {i} : Trop complexe ou impossible.")
+        except Exception as e:
+            print(f"[!] Erreur niveau {i}: {e}")
 
-        # On avance le plateau
-        board = board.get_next_state(v_id, delta)
+    print(f"\nBase de données terminée : {len(global_training_data)} exemples.")
 
-    # 4. L'IA apprend par cœur la leçon
-    # On entraîne sur 100 epochs pour être sûr qu'elle retienne bien
-    agent.train_supervised(training_data, epochs=200)
+    # L'IA apprend tout d'un coup
+    print("Démarrage du Deep Learning (Supervisé)...")
+    # On met plus d'epochs pour bien ancrer les connaissances
+    agent.train_supervised(global_training_data, epochs=80)
 
-    print("L'IA a appris la solution !")
+    agent.save("rush_hour_model.pth")
     return agent
+
+
+def get_trained_agent():
+    """Charge l'agent sauvegardé."""
+    agent = Agent()
+    if agent.load("rush_hour_model.pth"):
+        return agent
+    return None
