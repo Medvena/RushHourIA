@@ -294,7 +294,7 @@ def main_menu():
 
             ia_col = ORANGE_BTN if model_exists else GRAY_LIGHT
             ia_hov = ORANGE_HOVER if model_exists else GRAY_LIGHT
-            btn_ia, _ = draw_button(screen, "LANCER L'IA", start_x + btn_w + gap, action_y, btn_w, 60, font_btn,
+            btn_ia, _ = draw_button(screen, "RÉSOUDRE (IA)", start_x + btn_w + gap, action_y, btn_w, 60, font_btn,
                                     mouse_pos, ia_col, ia_hov)
 
             # BOUTON ACADEMIE (VERSION SIMPLE)
