@@ -1,5 +1,3 @@
-# rush_hour_gui.py
-
 import pygame
 import math
 import time
