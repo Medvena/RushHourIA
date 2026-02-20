@@ -72,7 +72,7 @@ class RushHourGUI:
 
     def solve_step_with_ai(self, agent):
         """Move one step and re-sync to avoid top-left jumps."""
-        from solver import state_to_tensor
+        from solver_ia import state_to_tensor
         state_tensor = state_to_tensor(self.board_state)
         action_idx = agent.act(state_tensor)
         v_id, delta = agent.decode_action(action_idx)
