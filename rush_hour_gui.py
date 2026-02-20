@@ -27,7 +27,7 @@ class RushHourGUI:
         self.offset_y = 185       
 
         # On agrandit l'image de 5% (facteur 1.05) pour que les bordures s'écartent
-        self.bg_scale_factor = 1.06 
+        self.bg_scale_factor = 1.04
         
         try:
             raw_bg = pygame.image.load(os.path.join("images", "parking.png")).convert()
