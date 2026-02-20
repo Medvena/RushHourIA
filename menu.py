@@ -91,59 +91,59 @@ def draw_loading_screen(screen, font, title, percent):
     pygame.display.flip()
     pygame.event.pump()
 
-# --- MENU PRINCIPAL ---
+def draw_popup(screen, font, text):
+    overlay = pygame.Surface((MENU_W, MENU_H), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 150))
+    screen.blit(overlay, (0, 0))
+    box = pygame.Rect(MENU_W//2 - 250, MENU_H//2 - 100, 500, 200)
+    pygame.draw.rect(screen, WHITE, box, border_radius=15)
+    pygame.draw.rect(screen, ORANGE_BTN, box, 4, border_radius=15)
+    lines = text.split('\n')
+    for i, line in enumerate(lines):
+        txt = font.render(line, True, BLACK)
+        screen.blit(txt, (MENU_W//2 - txt.get_width()//2, box.y + 60 + i*35))
+    pygame.display.flip()
 
 # --- LOGIQUE ---
-def set_screen_game():
-    return pygame.display.set_mode((GAME_SIZE, GAME_SIZE))
 
+def set_screen_game():
+    return pygame.display.set_mode((1000, 1000))
 
 def set_screen_menu():
     return pygame.display.set_mode((MENU_W, MENU_H))
 
-
 def run_academy(screen, font):
     def update_progress(title, percent):
         draw_loading_screen(screen, font, title, percent)
-
-    # ON APPREND TOUS LES NIVEAUX SANS EXCEPTION
+    
     total_levels = list_levels()
-    train_cumulative(start_level=1, end_level=38, progress_callback=update_progress)
-
-    draw_popup(screen, font, "MODÈLE ENTRAÎNÉ !\nL'IA connaît tous les niveaux.")
+    train_cumulative(start_level=1, end_level=total_levels, progress_callback=update_progress)
+    draw_popup(screen, font, "MODÈLE ENTRAÎNÉ !\nL'IA connaît les niveaux.")
     time.sleep(2)
 
 def watch_ai_play(level_number, font):
     agent = get_global_agent()
     if agent is None:
-        screen = pygame.display.get_surface()
-        draw_popup(screen, font, "Modèle introuvable.\nLancez l'Académie !")
+        draw_popup(pygame.display.get_surface(), font, "Modèle introuvable.\nLancez l'Académie !")
         time.sleep(2)
         return
 
     try:
         vehicles = load_level(level_number)
-    except:
-        return
+    except: return
 
     set_screen_game()
     game = RushHourGUI(vehicles)
     pygame.display.set_caption(f"IA - Niveau {level_number}")
 
     steps = 0
-    max_steps = 500  # assez grand pour niveaux complexes
+    max_steps = 500
     running = True
 
-    # -------------------------
-    # 1. Essayer de générer le chemin avec le NN (A*)
-    # -------------------------
     step_gen = None
     try:
         step_gen = solve_astar_stepwise(game.board_state, agent)
-        first_move = next(step_gen)
-    except (StopIteration, Exception):
-        # Si échec immédiat, fallback BFS
-        step_gen = None
+    except: step_gen = None
 
     while running and steps < max_steps:
         for event in pygame.event.get():
@@ -151,9 +151,6 @@ def watch_ai_play(level_number, font):
                 set_screen_menu()
                 return
 
-        # -------------------------
-        # 2. Obtenir le prochain coup
-        # -------------------------
         if step_gen:
             try:
                 v_id, delta = next(step_gen)
@@ -161,55 +158,32 @@ def watch_ai_play(level_number, font):
                 step_gen = None
                 continue
         else:
-            # BFS complet pour niveaux jamais vus
-            path = SolverBFS.solve(game.board_state, max_depth=30000)
-            if path:
-                v_id, delta = path[0]
+            path = SolverBFS.solve(game.board_state)
+            if path: v_id, delta = path[0]
             else:
-                draw_popup(pygame.display.get_surface(), font, "Impossible de résoudre ce niveau")
+                draw_popup(pygame.display.get_surface(), font, "Impossible à résoudre")
                 time.sleep(2)
                 set_screen_menu()
                 return
 
-        # -------------------------
-        # 3. Appliquer le coup
-        # -------------------------
         next_board = game.board_state.get_next_state(v_id, delta)
-        if next_board is None:
-            # Coup invalide → skip
-            continue
-
-        game.board_state = next_board
-        if v_id in game.g_vehicles:
-            game.g_vehicles[v_id].logic = next_board.vehicles[v_id]
-            game.g_vehicles[v_id].update_position_from_logic()
-
-        game._draw_board()
-        pygame.display.flip()
-        time.sleep(0.25)  # vitesse d'animation
-        steps += 1
-
-        # Niveau terminé ?
-        if game.board_state.is_solved():
-            running = False
-            break
+        if next_board:
+            game.board_state = next_board
+            if v_id in game.g_vehicles:
+                game.g_vehicles[v_id].logic = next_board.vehicles[v_id]
+                game.g_vehicles[v_id].update_position_from_logic()
+            
+            game._draw_board()
+            pygame.display.flip()
+            time.sleep(0.15)
+            steps += 1
+            if game.board_state.is_solved(): running = False
 
     time.sleep(1)
     set_screen_menu()
 
-
-def play_game_manual(level):
-    try:
-        vehicles = load_level(level)
-        set_screen_game()
-        game = RushHourGUI(vehicles)
-        game.run()
-        set_screen_menu()
-    except:
-        set_screen_menu()
-
-
 # --- MENU ---
+
 def main_menu():
     pygame.init()
     screen = pygame.display.set_mode((MENU_W, MENU_H))
@@ -239,7 +213,6 @@ def main_menu():
     running = True
 
     while running:
-        # Vérification de l'existence du modèle pour le statut
         model_exists = os.path.exists("rush_hour_brain.pth")
         mouse_pos = pygame.mouse.get_pos()
         click = False
@@ -254,7 +227,7 @@ def main_menu():
             title_s = f_title.render("RUSH HOUR IA", True, BLACK)
             screen.blit(title_s, (MENU_W//2 - title_s.get_width()//2, 40))
 
-            # INDICATEUR STATUT IA (En haut à droite)
+            # Statut IA
             status_color = GREEN_BTN if model_exists else RED_BTN
             status_text = "IA ONLINE" if model_exists else "IA OFFLINE"
             pygame.draw.rect(screen, status_color, (MENU_W - 160, 30, 130, 34), border_radius=17)
@@ -274,20 +247,19 @@ def main_menu():
             btn_next = draw_button(screen, ">", px + p_size + 10, py + 150, 50, 50, f_btn, mouse_pos, BLUE_BTN, BLUE_HOVER)
             btn_grid = draw_button(screen, f"NIVEAU {current_level} (CHANGER)", px, py + p_size + 15, p_size, 45, f_btn, mouse_pos, BLUE_BTN, BLUE_HOVER)
 
-            # Actions principales
+            # Actions
             b_play = draw_button(screen, "JOUER", 150, 580, 240, 60, f_btn, mouse_pos, GREEN_BTN, GREEN_HOVER)
             
-            ia_btn_color = ORANGE_BTN if model_exists else GRAY_LIGHT
-            ia_btn_hover = ORANGE_HOVER if model_exists else GRAY_LIGHT
-            b_ia = draw_button(screen, "IA SOLVER", 410, 580, 240, 60, f_btn, mouse_pos, ia_btn_color, ia_btn_hover)
+            ia_c = ORANGE_BTN if model_exists else GRAY_LIGHT
+            ia_h = ORANGE_HOVER if model_exists else GRAY_LIGHT
+            b_ia = draw_button(screen, "IA SOLVER", 410, 580, 240, 60, f_btn, mouse_pos, ia_c, ia_h)
 
-            # BOUTON ACADÉMIE (En bas à gauche)
+            # Académie
             acad_y = MENU_H - 80
-            btn_academy = draw_button(screen, "APPRENTISSAGE DE L'IA", 30, acad_y, 300, 40, f_small, mouse_pos, GRAY_DARK, (80, 80, 80))
-            lbl_info = f_mini.render(f"Apprend automatiquement les {max_levels} niveaux.", True, GRAY_TEXT_LIGHT)
+            btn_acad = draw_button(screen, "APPRENTISSAGE DE L'IA", 30, acad_y, 300, 40, f_small, mouse_pos, GRAY_DARK, (80, 80, 80))
+            lbl_info = f_mini.render(f"Apprend automatiquement les niveaux.", True, GRAY_TEXT_LIGHT)
             screen.blit(lbl_info, (35, acad_y + 45))
 
-            # Bouton Quitter
             b_quit = draw_button(screen, "QUITTER", MENU_W - 150, MENU_H - 60, 120, 35, f_small, mouse_pos, RED_BTN, RED_HOVER)
 
             if click:
@@ -297,28 +269,14 @@ def main_menu():
                     current_level = current_level + 1 if current_level < max_levels else 1
                 elif btn_grid.collidepoint(mouse_pos):
                     show_selector = True
-                elif btn_academy.collidepoint(mouse_pos):
-                    train_cumulative(max_level=max_levels, progress_callback=lambda t, p: draw_loading_screen(screen, f_btn, t, p))
+                elif btn_acad.collidepoint(mouse_pos):
+                    run_academy(screen, f_btn)
                 elif b_play.collidepoint(mouse_pos):
                     pygame.display.set_mode((1000, 1000))
                     RushHourGUI(load_level(current_level)).run()
-                    screen = pygame.display.set_mode((MENU_W, MENU_H))
+                    screen = set_screen_menu()
                 elif b_ia.collidepoint(mouse_pos) and model_exists:
-                    agent = get_global_agent()
-                    if agent:
-                        pygame.display.set_mode((1000, 1000))
-                        game = RushHourGUI(load_level(current_level))
-                        solving = True
-                        while solving:
-                            for event in pygame.event.get():
-                                if event.type == pygame.QUIT: solving = False
-                            solving = game.solve_step_with_ai(agent)
-                            game._draw_board()
-                            pygame.display.flip()
-                            time.sleep(0.15)
-                            if game.board_state.is_solved(): solving = False
-                        time.sleep(1)
-                    screen = pygame.display.set_mode((MENU_W, MENU_H))
+                    watch_ai_play(current_level, f_btn)
                 elif b_quit.collidepoint(mouse_pos):
                     running = False
         else:
