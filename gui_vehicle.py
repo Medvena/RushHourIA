@@ -1,6 +1,5 @@
-# gui_vehicle.py
-
 import pygame
+import os
 from vehicle import Vehicle
 from config import PER_SQ
 
@@ -54,6 +53,9 @@ class GUIVehicle:
         # Pygame rectangle (current position and size)
         self.rect = pygame.Rect(start_x, start_y, width, height)
 
+        # --- Image Loading and Processing ---
+        self.image = self._init_image(width, height)
+
         # --- Drag-and-drop state ---
         self.rectDrag = False
         self.offsetX = 0
@@ -62,6 +64,39 @@ class GUIVehicle:
         # Logical position at mouse click time
         self.initial_drag_pos = (vehicle_logic.row, vehicle_logic.col)
 
+    def _init_image(self, width, height):
+        """Loads the image from /images, rotates, and applies the vehicle color."""
+        # Determine file based on size (2 = car, 3 = truck)
+        file_name = "car.png" if self.logic.size == 2 else "truck.png"
+        path = os.path.join("images", file_name)
+
+        try:
+            # Load with alpha channel
+            img = pygame.image.load(path).convert_alpha()
+            
+            # Base scale: Always scale to a vertical version first for consistency
+            vertical_w = PER_SQ
+            vertical_h = PER_SQ * self.logic.size
+            img = pygame.transform.smoothscale(img, (vertical_w, vertical_h))
+
+            # Rotate if orientation is horizontal
+            if self.logic.orientation == "h":
+                img = pygame.transform.rotate(img, -90)
+
+            # Apply color tint using BLEND_RGBA_MULT
+            # This turns white areas into the vehicle color while keeping black lines intact
+            color_layer = pygame.Surface((width, height), pygame.SRCALPHA)
+            color_layer.fill((*self.colour, 255))
+            img.blit(color_layer, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            
+            return img
+
+        except (pygame.error, FileNotFoundError):
+            # Fallback to a solid color rectangle if image is missing
+            fallback = pygame.Surface((width, height))
+            fallback.fill(self.colour)
+            return fallback
+
     def update_position_from_logic(self):
         """Synchronize the graphical position with the logical Vehicle position."""
         self.rect.x = self.logic.col * PER_SQ
@@ -69,5 +104,5 @@ class GUIVehicle:
 
     def draw(self, surface: pygame.Surface):
         """Draw the vehicle onto the given Pygame surface."""
-        surface.fill(self.colour, self.rect)
-        pygame.draw.rect(surface, (0, 0, 0), self.rect, 5)
+        # Draw the processed image only
+        surface.blit(self.image, self.rect)
