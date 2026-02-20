@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
+import matplotlib.pyplot as plt
 import random
 import copy
 import os
@@ -86,7 +87,6 @@ class Agent:
         self.criterion = nn.MSELoss()
         self.model_file = "rush_hour_brain.pth"
 
-    # Predict heuristic value
     def heuristic(self, board):
         self.model.eval()
         with torch.no_grad():
@@ -96,15 +96,19 @@ class Agent:
     def train_supervised(self, dataset, epochs=50, progress_callback=None):
         self.model.train()
         batch_size = 32
+        history_loss = []
 
         for epoch in range(epochs):
             random.shuffle(dataset)
+            epoch_loss = 0
+            num_batches = 0
+
             if progress_callback and epoch % 5 == 0:
                 pct = 50 + int((epoch / epochs) * 50)
                 progress_callback(f"Training Heuristic NN ({epoch}/{epochs})", pct)
 
             for i in range(0, len(dataset), batch_size):
-                batch = dataset[i:i+batch_size]
+                batch = dataset[i:i + batch_size]
                 states = torch.cat([x[0] for x in batch])
                 targets = torch.tensor([x[1] for x in batch], dtype=torch.float32).unsqueeze(1)
 
@@ -114,61 +118,65 @@ class Agent:
                 loss.backward()
                 self.optimizer.step()
 
+                epoch_loss += loss.item()
+                num_batches += 1
+
+            history_loss.append(epoch_loss / num_batches)
+
+        return history_loss
+
+    # --- CES MÉTHODES DOIVENT ÊTRE ICI ---
     def save(self):
+        """Sauvegarde les poids du réseau de neurones"""
         torch.save(self.model.state_dict(), self.model_file)
+        print(f"Modèle sauvegardé sous {self.model_file}")
 
     def load(self):
+        """Charge les poids si le fichier existe"""
         if os.path.exists(self.model_file):
             self.model.load_state_dict(torch.load(self.model_file))
             self.model.eval()
             return True
         return False
 
-
 # ==========================================
 # 4. A* SOLVER GUIDÉ PAR LE NN
 # ==========================================
-def solve_astar_stepwise(start_board, agent):
+def solve_astar_complete(start_board, agent):
     """
-    Generator A* pas-à-pas : yield un coup (v_id, delta) à la fois.
+    Version complète de A* qui retourne le chemin optimal calculé.
+    f(n) = g(n) + h(n)
     """
+    # priority_queue: (f_score, counter, current_board, path_taken)
     open_set = []
     counter = 0
     heapq.heappush(open_set, (0, counter, start_board, []))
-    visited = set()
-    max_steps = 10000
-    loops = 0
+
+    visited = {}  # board_hash -> min_cost_to_reach
 
     while open_set:
-        f, _, board, path = heapq.heappop(open_set)
-        loops += 1
-        if loops > max_steps:
-            return  # Timeout
+        f, _, current_board, path = heapq.heappop(open_set)
 
-        if board.is_solved():
-            for move in path:
-                yield move
-            return
+        if current_board.is_solved():
+            return path  # On a trouvé la solution !
 
-        if hash(board) in visited:
+        board_h = hash(current_board)
+        if board_h in visited and visited[board_h] <= len(path):
             continue
-        visited.add(hash(board))
+        visited[board_h] = len(path)
 
-        g = len(path)
-        h = agent.heuristic(board)
+        for v_id, delta in current_board.get_possible_moves():  # Supposant que tu as cette méthode
+            next_state = current_board.get_next_state(v_id, delta)
+            new_path = path + [(v_id, delta)]
 
-        for v_id in board.vehicles:
-            for delta in [-1, 1]:
-                if board.is_move_valid(v_id, delta):
-                    nxt = board.get_next_state(v_id, delta)
-                    new_path = path + [(v_id, delta)]
-                    counter += 1
-                    f_score = g + h
-                    heapq.heappush(open_set, (f_score, counter, nxt, new_path))
+            g_score = len(new_path)
+            h_score = agent.heuristic(next_state)  # L'IA estime la distance restante
+            f_score = g_score + h_score
 
-        # Yield le prochain coup disponible pour l’affichage
-        if path:
-            yield path[0]
+            counter += 1
+            heapq.heappush(open_set, (f_score, counter, next_state, new_path))
+
+    return None  # Pas de solution trouvée
 
 
 # ==========================================
@@ -227,3 +235,21 @@ def train_cumulative(start_level=1, end_level=None, progress_callback=None):
         return agent
 
     return None
+
+
+def plot_learning_curve(losses):
+    """
+    Génère et sauvegarde un graphique montrant l'évolution de l'erreur.
+    """
+    plt.figure(figsize=(10, 6))
+    plt.plot(losses, label='Erreur (MSE)', color='#e67e22', linewidth=2)
+    plt.title("Courbe d'apprentissage du modèle Rush Hour", fontsize=14)
+    plt.xlabel("Époque (Passages sur les données)", fontsize=12)
+    plt.ylabel("Perte (Loss)", fontsize=12)
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.legend()
+
+    # Sauvegarde le fichier image dans le dossier du projet
+    plt.savefig("learning_curve.png")
+    plt.close()  # Ferme la figure pour libérer la mémoire
+    print("Graphique sauvegardé sous 'learning_curve.png'")
