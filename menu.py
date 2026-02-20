@@ -11,7 +11,7 @@ from config import GRID_SIZE, PER_SQ, RED_CAR_ID
 from board import BoardState
 
 # On importe les fonctions supervisées
-from solver_ia import train_cumulative, get_global_agent, state_to_tensor, SolverBFS
+from solver_ia import train_cumulative, get_global_agent, state_to_tensor, SolverBFS, solve_astar_stepwise
 
 # --- DIMENSIONS ---
 GAME_SIZE = GRID_SIZE * PER_SQ
@@ -126,17 +126,16 @@ def run_academy(screen, font):
 
     # ON APPREND TOUS LES NIVEAUX SANS EXCEPTION
     total_levels = list_levels()
-    train_cumulative(max_level=total_levels, progress_callback=update_progress)
+    train_cumulative(start_level=1, end_level=38, progress_callback=update_progress)
 
     draw_popup(screen, font, "MODÈLE ENTRAÎNÉ !\nL'IA connaît tous les niveaux.")
     time.sleep(2)
-
 
 def watch_ai_play(level_number, font):
     agent = get_global_agent()
     if agent is None:
         screen = pygame.display.get_surface()
-        draw_popup(screen, font, "Modèle vide.\nLancez l'Académie !")
+        draw_popup(screen, font, "Modèle introuvable.\nLancez l'Académie !")
         time.sleep(2)
         return
 
@@ -149,67 +148,69 @@ def watch_ai_play(level_number, font):
     game = RushHourGUI(vehicles)
     pygame.display.set_caption(f"IA - Niveau {level_number}")
 
-    done = False
     steps = 0
-    max_steps = 150  # On laisse de la marge
+    max_steps = 500  # assez grand pour niveaux complexes
+    running = True
 
-    while not done:
+    # -------------------------
+    # 1. Essayer de générer le chemin avec le NN (A*)
+    # -------------------------
+    step_gen = None
+    try:
+        step_gen = solve_astar_stepwise(game.board_state, agent)
+        first_move = next(step_gen)
+    except (StopIteration, Exception):
+        # Si échec immédiat, fallback BFS
+        step_gen = None
+
+    while running and steps < max_steps:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 set_screen_menu()
                 return
 
-        state = state_to_tensor(game.board_state)
-        action_idx = agent.act(state)
-        v_id, delta = agent.decode_action(action_idx)
-
-        # SI L'IA SE TROMPE (Coup Invalide ou Blocage)
-        if not game.board_state.is_move_valid(v_id, delta) or steps > max_steps:
-            print(">>> ERREUR IA -> AUTO-RÉPARATION <<<")
-
-            # Affichage "Secours"
-            font_big = pygame.font.SysFont("Segoe UI", 30, bold=True)
-            overlay = pygame.Surface((GAME_SIZE, GAME_SIZE))
-            overlay.set_alpha(200)
-            overlay.fill(BLACK)
-            screen = pygame.display.get_surface()
-            screen.blit(overlay, (0, 0))
-            txt = font_big.render("AUTO-RÉPARATION...", True, ORANGE_BTN)
-            screen.blit(txt, (GAME_SIZE // 2 - txt.get_width() // 2, GAME_SIZE // 2))
-            pygame.display.flip()
-
-            # Le Solver prend le relais
-            path = SolverBFS.solve(game.board_state)
+        # -------------------------
+        # 2. Obtenir le prochain coup
+        # -------------------------
+        if step_gen:
+            try:
+                v_id, delta = next(step_gen)
+            except StopIteration:
+                step_gen = None
+                continue
+        else:
+            # BFS complet pour niveaux jamais vus
+            path = SolverBFS.solve(game.board_state, max_depth=30000)
             if path:
-                for s_vid, s_delta in path:
-                    nxt = game.board_state.get_next_state(s_vid, s_delta)
-                    game.board_state = nxt
-                    if s_vid in game.g_vehicles:
-                        game.g_vehicles[s_vid].logic = nxt.vehicles[s_vid]
-                        game.g_vehicles[s_vid].update_position_from_logic()
-                    game._draw_board()
-                    pygame.display.flip()
-                    time.sleep(0.15)
-                done = True
+                v_id, delta = path[0]
             else:
+                draw_popup(pygame.display.get_surface(), font, "Impossible de résoudre ce niveau")
+                time.sleep(2)
                 set_screen_menu()
                 return
 
-        else:
-            # Coup Valide
-            next_board = game.board_state.get_next_state(v_id, delta)
-            if next_board:
-                game.board_state = next_board
-                if v_id in game.g_vehicles:
-                    game.g_vehicles[v_id].logic = next_board.vehicles[v_id]
-                    game.g_vehicles[v_id].update_position_from_logic()
-                if game.board_state.is_solved():
-                    done = True
+        # -------------------------
+        # 3. Appliquer le coup
+        # -------------------------
+        next_board = game.board_state.get_next_state(v_id, delta)
+        if next_board is None:
+            # Coup invalide → skip
+            continue
 
-            game._draw_board()
-            pygame.display.flip()
-            time.sleep(0.3)
-            steps += 1
+        game.board_state = next_board
+        if v_id in game.g_vehicles:
+            game.g_vehicles[v_id].logic = next_board.vehicles[v_id]
+            game.g_vehicles[v_id].update_position_from_logic()
+
+        game._draw_board()
+        pygame.display.flip()
+        time.sleep(0.25)  # vitesse d'animation
+        steps += 1
+
+        # Niveau terminé ?
+        if game.board_state.is_solved():
+            running = False
+            break
 
     time.sleep(1)
     set_screen_menu()
