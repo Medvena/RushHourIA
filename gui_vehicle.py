@@ -19,7 +19,7 @@ VEHICLE_COLORS = {
     "F": (0, 128, 0),      # dark green
     "G": (90, 90, 90),     # dark gray
     "H": (245, 245, 220),  # beige
-    "I": (255, 255, 224),  # light yellow
+    "I": (252, 251, 155),  # light yellow
     "J": (139, 69, 19),    # brown
     "K": (128, 128, 0),    # khaki
 
