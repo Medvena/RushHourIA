@@ -9,8 +9,9 @@ from levels import load_level, list_levels
 from rush_hour_gui import RushHourGUI
 from config import GRID_SIZE, RED_CAR_ID
 from board import BoardState
-# Import des fonctions d'entraînement et du solver
-from solver_ia import train_cumulative, get_global_agent, state_to_tensor, SolverBFS
+
+# On importe les fonctions supervisées
+from solver_ia import train_cumulative, get_global_agent, state_to_tensor, SolverBFS, solve_astar_stepwise
 
 # --- CONFIGURATION MENU ---
 MENU_W = 800
@@ -92,6 +93,123 @@ def draw_loading_screen(screen, font, title, percent):
 
 # --- MENU PRINCIPAL ---
 
+# --- LOGIQUE ---
+def set_screen_game():
+    return pygame.display.set_mode((GAME_SIZE, GAME_SIZE))
+
+
+def set_screen_menu():
+    return pygame.display.set_mode((MENU_W, MENU_H))
+
+
+def run_academy(screen, font):
+    def update_progress(title, percent):
+        draw_loading_screen(screen, font, title, percent)
+
+    # ON APPREND TOUS LES NIVEAUX SANS EXCEPTION
+    total_levels = list_levels()
+    train_cumulative(start_level=1, end_level=38, progress_callback=update_progress)
+
+    draw_popup(screen, font, "MODÈLE ENTRAÎNÉ !\nL'IA connaît tous les niveaux.")
+    time.sleep(2)
+
+def watch_ai_play(level_number, font):
+    agent = get_global_agent()
+    if agent is None:
+        screen = pygame.display.get_surface()
+        draw_popup(screen, font, "Modèle introuvable.\nLancez l'Académie !")
+        time.sleep(2)
+        return
+
+    try:
+        vehicles = load_level(level_number)
+    except:
+        return
+
+    set_screen_game()
+    game = RushHourGUI(vehicles)
+    pygame.display.set_caption(f"IA - Niveau {level_number}")
+
+    steps = 0
+    max_steps = 500  # assez grand pour niveaux complexes
+    running = True
+
+    # -------------------------
+    # 1. Essayer de générer le chemin avec le NN (A*)
+    # -------------------------
+    step_gen = None
+    try:
+        step_gen = solve_astar_stepwise(game.board_state, agent)
+        first_move = next(step_gen)
+    except (StopIteration, Exception):
+        # Si échec immédiat, fallback BFS
+        step_gen = None
+
+    while running and steps < max_steps:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                set_screen_menu()
+                return
+
+        # -------------------------
+        # 2. Obtenir le prochain coup
+        # -------------------------
+        if step_gen:
+            try:
+                v_id, delta = next(step_gen)
+            except StopIteration:
+                step_gen = None
+                continue
+        else:
+            # BFS complet pour niveaux jamais vus
+            path = SolverBFS.solve(game.board_state, max_depth=30000)
+            if path:
+                v_id, delta = path[0]
+            else:
+                draw_popup(pygame.display.get_surface(), font, "Impossible de résoudre ce niveau")
+                time.sleep(2)
+                set_screen_menu()
+                return
+
+        # -------------------------
+        # 3. Appliquer le coup
+        # -------------------------
+        next_board = game.board_state.get_next_state(v_id, delta)
+        if next_board is None:
+            # Coup invalide → skip
+            continue
+
+        game.board_state = next_board
+        if v_id in game.g_vehicles:
+            game.g_vehicles[v_id].logic = next_board.vehicles[v_id]
+            game.g_vehicles[v_id].update_position_from_logic()
+
+        game._draw_board()
+        pygame.display.flip()
+        time.sleep(0.25)  # vitesse d'animation
+        steps += 1
+
+        # Niveau terminé ?
+        if game.board_state.is_solved():
+            running = False
+            break
+
+    time.sleep(1)
+    set_screen_menu()
+
+
+def play_game_manual(level):
+    try:
+        vehicles = load_level(level)
+        set_screen_game()
+        game = RushHourGUI(vehicles)
+        game.run()
+        set_screen_menu()
+    except:
+        set_screen_menu()
+
+
+# --- MENU ---
 def main_menu():
     pygame.init()
     screen = pygame.display.set_mode((MENU_W, MENU_H))
