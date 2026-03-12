@@ -110,5 +110,15 @@ class BoardState:
             # 2) Collision check (only for in-grid cells)
             if self.grid[target_row][target_col] is not None:
                 return False
-
         return True
+
+    def get_possible_moves(self):
+        """Retourne la liste de tous les mouvements (v_id, delta) immédiatement possibles."""
+        moves = []
+        for v_id in self.vehicles:
+            for delta in [-1, 1]:
+                if self.is_move_valid(v_id, delta):
+                    moves.append((v_id, delta))
+        return moves
+
+

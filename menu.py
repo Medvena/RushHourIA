@@ -12,7 +12,7 @@ from config import GRID_SIZE, RED_CAR_ID
 from board import BoardState
 
 # On importe les fonctions supervisées et de résolution
-from solver_ia import Agent, train_cumulative, get_global_agent, state_to_tensor, SolverBFS, solve_astar_complete, plot_learning_curve
+from solver_ia import Agent, train_cumulative, get_global_agent, solve_with_nn
 
 # --- CONFIGURATION MENU ---
 MENU_W = 800
@@ -128,77 +128,20 @@ def set_screen_menu():
 
 
 def run_academy(screen, font):
-    """
-    Lance le cycle complet d'apprentissage :
-    1. Résolution des niveaux par BFS pour créer des données.
-    2. Entraînement du réseau de neurones.
-    3. Génération de la courbe de perte.
-    """
-
     def update_progress(title, percent):
-        # On réutilise ta fonction de chargement existante
         draw_loading_screen(screen, font, title, percent)
 
-    # Initialisation de l'agent (le modèle IA)
-    agent = Agent()
-    dataset = []
-
-    # 1. RÉCUPÉRATION DES NIVEAUX
     try:
+        from levels import list_levels
         total_levels = list_levels()
     except:
-        total_levels = 38  # Sécurité si la fonction n'est pas trouvée
+        total_levels = 38
 
-    # 2. GÉNÉRATION DU DATASET
-    # L'IA observe comment le BFS résout les niveaux pour apprendre
-    for lvl in range(1, total_levels + 1):
-        update_progress(f"Analyse du Niveau {lvl}...", int((lvl / total_levels) * 50))
-
-        try:
-            vehicles = load_level(lvl)
-            board = BoardState(copy.deepcopy(vehicles))
-
-            # Le BFS trouve le chemin le plus court
-            path = SolverBFS.solve(board)
-
-            if path:
-                temp_board = BoardState(copy.deepcopy(vehicles))
-                for i, (v_id, delta) in enumerate(path):
-                    # Conversion du plateau en tenseur pour le réseau
-                    state_tensor = state_to_tensor(temp_board)
-                    # La cible est le nombre de coups restants
-                    remaining_moves = float(len(path) - i)
-                    dataset.append((state_tensor, remaining_moves))
-
-                    # On simule le mouvement pour passer à l'état suivant
-                    temp_board = temp_board.get_next_state(v_id, delta)
-        except Exception as e:
-            print(f"Erreur niveau {lvl}: {e}")
-            continue
-
-    # 3. PHASE D'ENTRAÎNEMENT
-    if dataset:
-        update_progress("Entraînement du cerveau...", 55)
-
-        # On lance l'entraînement et on récupère l'historique des erreurs (Loss)
-        history = agent.train_supervised(dataset, epochs=60, progress_callback=update_progress)
-
-        # Sauvegarde du modèle (.pth)
-        agent.save()
-
-        # GÉNÉRATION DE LA COURBE
-        try:
-            plot_learning_curve(history)
-            msg = "ENTRAÎNEMENT RÉUSSI !\nCourbe 'learning_curve.png' générée."
-        except Exception as e:
-            print(f"Erreur lors du graphique : {e}")
-            msg = "MODÈLE ENTRAÎNÉ !\n(Erreur graphique : matplotlib absent ?)"
-
-        draw_popup(screen, font, msg)
-    else:
-        draw_popup(screen, font, "ERREUR\nAucune donnée d'entraînement collectée.")
-
+    # L'IA apprend tout instantanément
+    train_cumulative(1, total_levels, progress_callback=update_progress)
+    draw_popup(screen, font, "L'IA a mémorisé tous les niveaux !")
     time.sleep(2)
+
 
 def watch_ai_play(level_number, font):
     agent = get_global_agent()
@@ -209,35 +152,26 @@ def watch_ai_play(level_number, font):
 
     try:
         vehicles = load_level(level_number)
-    except: return
+    except:
+        return
 
     set_screen_game()
     game = RushHourGUI(vehicles)
-    pygame.display.set_caption(f"IA - Niveau {level_number}")
+    pygame.display.set_caption(f"IA PyTorch - Niveau {level_number}")
 
-    steps, max_steps = 0, 500
-    running = True
+    # C'est le réseau de neurones qui joue !
+    chemin_ia = solve_with_nn(game.board_state, agent)
 
-    step_gen = None
-    try:
-        step_gen = solve_astar_complete(game.board_state, agent)
-    except: step_gen = None
+    if not chemin_ia:
+        draw_popup(pygame.display.get_surface(), font, "L'IA s'est perdue (Modèle pas assez entraîné)")
+        time.sleep(2)
+        set_screen_menu()
+        return
 
-    while running and steps < max_steps:
+    # Animation
+    for v_id, delta in chemin_ia:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                set_screen_menu()
-                return
-
-        if step_gen:
-            try: v_id, delta = next(step_gen)
-            except StopIteration: step_gen = None; continue
-        else:
-            path = SolverBFS.solve(game.board_state)
-            if path: v_id, delta = path[0]
-            else:
-                draw_popup(pygame.display.get_surface(), font, "Impossible à résoudre")
-                time.sleep(2)
                 set_screen_menu()
                 return
 
@@ -250,8 +184,6 @@ def watch_ai_play(level_number, font):
             game._draw_board()
             pygame.display.flip()
             time.sleep(0.15)
-            steps += 1
-            if game.board_state.is_solved(): running = False
 
     time.sleep(1)
     set_screen_menu()

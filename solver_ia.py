@@ -2,18 +2,18 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-import matplotlib.pyplot as plt
 import random
 import copy
 import os
-import heapq
 from collections import deque
-from config import GRID_SIZE, RED_CAR_ID
+from config import GRID_SIZE
 from board import BoardState
 from levels import load_level
+import heapq
+
 
 # ==========================================
-# 1. LE CERVEAU (Heuristic Network)
+# 1. LE MODÈLE NEURONAL (PyTorch)
 # ==========================================
 class RushHourNet(nn.Module):
     def __init__(self):
@@ -25,7 +25,7 @@ class RushHourNet(nn.Module):
         self.relu = nn.ReLU()
         self.flatten = nn.Flatten()
         self.fc1 = nn.Linear(GRID_SIZE * GRID_SIZE * 128, 512)
-        self.fc2 = nn.Linear(512, 1)  # OUTPUT = distance to goal
+        self.fc2 = nn.Linear(512, 1)
 
     def forward(self, x):
         x = x.view(-1, 1, GRID_SIZE, GRID_SIZE)
@@ -37,20 +37,18 @@ class RushHourNet(nn.Module):
 
 
 def state_to_tensor(board_state):
+    """Transforme le plateau en image mathématique pour l'IA."""
     matrix = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
     for r in range(GRID_SIZE):
         for c in range(GRID_SIZE):
             cell_id = board_state.grid[r][c]
             if cell_id is not None:
-                if cell_id == RED_CAR_ID:
-                    matrix[r][c] = 1.0
-                else:
-                    matrix[r][c] = 0.5
+                matrix[r][c] = ord(cell_id) / 100.0
     return torch.tensor(matrix).unsqueeze(0)
 
 
 # ==========================================
-# 2. BFS PROF POUR GÉNÉRER DATASET
+# 2. LE PROFESSEUR (Génère le chemin idéal)
 # ==========================================
 class SolverBFS:
     @staticmethod
@@ -60,25 +58,20 @@ class SolverBFS:
 
         while queue:
             board, path = queue.popleft()
-            if len(path) > max_depth:
-                return None
+            if len(path) > max_depth: return None
+            if board.is_solved(): return path
 
-            if board.is_solved():
-                return path
-
-            for v_id in board.vehicles:
-                for delta in [-1, 1]:
-                    if board.is_move_valid(v_id, delta):
-                        nxt = board.get_next_state(v_id, delta)
-                        h = hash(nxt)
-                        if h not in visited:
-                            visited.add(h)
-                            queue.append((nxt, path + [(v_id, delta)]))
+            for v_id, delta in board.get_possible_moves():
+                nxt = board.get_next_state(v_id, delta)
+                h = hash(nxt)
+                if h not in visited:
+                    visited.add(h)
+                    queue.append((nxt, path + [(v_id, delta)]))
         return None
 
 
 # ==========================================
-# 3. AGENT (Neural Heuristic)
+# 3. L'AGENT (Apprentissage et Sauvegarde)
 # ==========================================
 class Agent:
     def __init__(self):
@@ -93,19 +86,15 @@ class Agent:
             state = state_to_tensor(board)
             return self.model(state).item()
 
-    def train_supervised(self, dataset, epochs=50, progress_callback=None):
+    def train_supervised(self, dataset, epochs=100, progress_callback=None):
         self.model.train()
         batch_size = 32
-        history_loss = []
 
         for epoch in range(epochs):
             random.shuffle(dataset)
-            epoch_loss = 0
-            num_batches = 0
-
             if progress_callback and epoch % 5 == 0:
                 pct = 50 + int((epoch / epochs) * 50)
-                progress_callback(f"Training Heuristic NN ({epoch}/{epochs})", pct)
+                progress_callback(f"Entraînement Neuronal ({epoch}/{epochs})", pct)
 
             for i in range(0, len(dataset), batch_size):
                 batch = dataset[i:i + batch_size]
@@ -118,138 +107,104 @@ class Agent:
                 loss.backward()
                 self.optimizer.step()
 
-                epoch_loss += loss.item()
-                num_batches += 1
-
-            history_loss.append(epoch_loss / num_batches)
-
-        return history_loss
-
-    # --- CES MÉTHODES DOIVENT ÊTRE ICI ---
     def save(self):
-        """Sauvegarde les poids du réseau de neurones"""
         torch.save(self.model.state_dict(), self.model_file)
-        print(f"Modèle sauvegardé sous {self.model_file}")
 
     def load(self):
-        """Charge les poids si le fichier existe"""
         if os.path.exists(self.model_file):
             self.model.load_state_dict(torch.load(self.model_file))
             self.model.eval()
             return True
         return False
 
-# ==========================================
-# 4. A* SOLVER GUIDÉ PAR LE NN
-# ==========================================
-def solve_astar_complete(start_board, agent):
-    """
-    Version complète de A* qui retourne le chemin optimal calculé.
-    f(n) = g(n) + h(n)
-    """
-    # priority_queue: (f_score, counter, current_board, path_taken)
-    open_set = []
-    counter = 0
-    heapq.heappush(open_set, (0, counter, start_board, []))
 
-    visited = {}  # board_hash -> min_cost_to_reach
-
-    while open_set:
-        f, _, current_board, path = heapq.heappop(open_set)
-
-        if current_board.is_solved():
-            return path  # On a trouvé la solution !
-
-        board_h = hash(current_board)
-        if board_h in visited and visited[board_h] <= len(path):
-            continue
-        visited[board_h] = len(path)
-
-        for v_id, delta in current_board.get_possible_moves():  # Supposant que tu as cette méthode
-            next_state = current_board.get_next_state(v_id, delta)
-            new_path = path + [(v_id, delta)]
-
-            g_score = len(new_path)
-            h_score = agent.heuristic(next_state)  # L'IA estime la distance restante
-            f_score = g_score + h_score
-
-            counter += 1
-            heapq.heappush(open_set, (f_score, counter, next_state, new_path))
-
-    return None  # Pas de solution trouvée
-
-
-# ==========================================
-# 5. TRAINING GLOBAL
-# ==========================================
 def get_global_agent():
     agent = Agent()
-    if agent.load():
-        return agent
+    if agent.load(): return agent
     return None
 
 
 def train_cumulative(start_level=1, end_level=None, progress_callback=None):
-    """
-    Apprend les niveaux de start_level jusqu'à end_level inclus.
-    """
     agent = Agent()
     dataset = []
+    from levels import list_levels
+    if end_level is None: end_level = list_levels()
 
-    if end_level is None:
-        from levels import list_levels
-        end_level = list_levels()
-
-    print(f"--- TRAINING HEURISTIC NN LEVELS {start_level} -> {end_level} ---")
-
-    # Génération des données
     for lvl in range(start_level, end_level + 1):
         if progress_callback:
-            pct = int((lvl - start_level) / (end_level - start_level + 1) * 50)
-            progress_callback(f"Solving Level {lvl}", pct)
-
+            pct = int(((lvl - start_level) / (end_level - start_level + 1)) * 50)
+            progress_callback(f"BFS Niveau {lvl}...", pct)
         try:
             vehicles = load_level(lvl)
             board = BoardState(copy.deepcopy(vehicles))
             path = SolverBFS.solve(board)
 
-            if not path:
-                continue
+            if path:
+                temp_board = board
+                for i, (v_id, delta) in enumerate(path):
+                    # 1. On montre le BON chemin
+                    state = state_to_tensor(temp_board)
+                    remaining = float(len(path) - i)
+                    dataset.append((state, remaining))
 
-            temp_board = BoardState(copy.deepcopy(vehicles))
-            for i, (v_id, delta) in enumerate(path):
-                state = state_to_tensor(temp_board)
-                remaining = len(path) - i
-                dataset.append((state, float(remaining)))
-                temp_board = temp_board.get_next_state(v_id, delta)
+                    # 2. L'ASTUCE : On montre les MAUVAIS chemins avec une note affreuse (+10)
+                    for bad_v, bad_d in temp_board.get_possible_moves():
+                        if (bad_v, bad_d) != (v_id, delta):
+                            bad_board = temp_board.get_next_state(bad_v, bad_d)
+                            bad_state = state_to_tensor(bad_board)
+                            dataset.append((bad_state, remaining + 10.0))
+
+                    temp_board = temp_board.get_next_state(v_id, delta)
         except:
-            print(f"Level {lvl} skipped")
+            continue
 
-    # Entraînement
     if dataset:
-        print(f"Training on {len(dataset)} states")
-        agent.train_supervised(dataset, epochs=60, progress_callback=progress_callback)
+        agent.train_supervised(dataset, epochs=100, progress_callback=progress_callback)
         agent.save()
-        if progress_callback:
-            progress_callback("Done!", 100)
-        return agent
+
+    if progress_callback: progress_callback("Apprentissage terminé !", 100)
+    return agent
+
+
+# ==========================================
+# 4. RÉSOLUTION GLUTTONE PAR LE RÉSEAU
+# ==========================================
+def solve_with_nn(start_board, agent, max_steps=20000):
+    """
+    L'IA est guidée par le réseau de neurones, mais elle a le droit
+    de revenir en arrière (A*) si elle s'est trompée à une intersection.
+    """
+    open_set = []
+    counter = 0
+    # On stocke: (score_total, identifiant_unique, plateau_actuel, chemin_parcouru)
+    heapq.heappush(open_set, (0, counter, start_board, []))
+    visited = set()
+
+    while open_set:
+        f_score, _, current_board, path = heapq.heappop(open_set)
+
+        if current_board.is_solved():
+            return path
+
+        board_h = hash(current_board)
+        if board_h in visited:
+            continue
+        visited.add(board_h)
+
+        # Si l'IA tourne en rond trop longtemps, on arrête
+        if counter > max_steps:
+            return None
+
+        for v_id, delta in current_board.get_possible_moves():
+            next_board = current_board.get_next_state(v_id, delta)
+            if hash(next_board) not in visited:
+                # Le réseau de neurones donne sa note
+                nn_score = agent.heuristic(next_board)
+
+                # Le "vrai" score = coups déjà joués + prédiction du réseau
+                total_score = len(path) + 1 + nn_score
+
+                counter += 1
+                heapq.heappush(open_set, (total_score, counter, next_board, path + [(v_id, delta)]))
 
     return None
-
-
-def plot_learning_curve(losses):
-    """
-    Génère et sauvegarde un graphique montrant l'évolution de l'erreur.
-    """
-    plt.figure(figsize=(10, 6))
-    plt.plot(losses, label='Erreur (MSE)', color='#e67e22', linewidth=2)
-    plt.title("Courbe d'apprentissage du modèle Rush Hour", fontsize=14)
-    plt.xlabel("Époque (Passages sur les données)", fontsize=12)
-    plt.ylabel("Perte (Loss)", fontsize=12)
-    plt.grid(True, linestyle='--', alpha=0.6)
-    plt.legend()
-
-    # Sauvegarde le fichier image dans le dossier du projet
-    plt.savefig("learning_curve.png")
-    plt.close()  # Ferme la figure pour libérer la mémoire
-    print("Graphique sauvegardé sous 'learning_curve.png'")
